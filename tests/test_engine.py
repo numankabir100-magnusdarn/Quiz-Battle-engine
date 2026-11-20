@@ -1,0 +1,425 @@
+import pytest
+from server.engine.game_engine import GameEngine
+from server.engine.models import RoundPhase, Stage
+
+
+def test_initial_state(clean_engine: GameEngine):
+    """Engine initializes with 12 teams, Qualifier stage, Match 1."""
+    state = clean_engine.get_state()
+    assert state["event"]["stage"] == Stage.QUALIFIER.value
+    assert state["event"]["match_number"] == 1
+    assert len(state["teams"]) == 12
+    assert len(state["event"]["bracket"]["matches"]) == 13
+    assert state["current_match"]["team_a_id"] == "team_1"
+    assert state["current_match"]["team_b_id"] == "team_2"
+    assert state["round"]["phase"] == RoundPhase.IDLE.value
+    assert state["buzzers"]["locked"] is True
+
+
+def test_display_view_controller_is_validated_and_serialized(clean_engine: GameEngine):
+    engine = clean_engine
+    assert engine.get_state()["display_view"] == "auto"
+    assert engine.set_display_view("bracket") == {"view": "bracket"}
+    assert engine.get_state()["display_view"] == "bracket"
+    with pytest.raises(ValueError):
+        engine.set_display_view("invalid")
+
+
+def test_rapid_fire_scoring_rules(clean_engine: GameEngine):
+    """Rapid Fire:
+    - 120 seconds per team
+    - +10 per correct answer
+    - 0 for wrong or unanswered (no negative marking)
+    - One designated speaker
+    """
+    engine = clean_engine
+    team_a = "team_1"
+    team_b = "team_2"
+
+    engine.start_rapid_fire(team_id=team_a, duration_seconds=120)
+    assert engine.round.phase == RoundPhase.RAPID_FIRE.value
+    assert engine.round.active_team_id == team_a
+    assert engine.round.timer_seconds_remaining == 120
+    assert engine.buzzers.locked is True
+
+    # Designated speaker is registered
+    assert engine.teams[team_a].designated_speaker == "Player 1A"
+
+    # Question 1: Correct (+10)
+    engine.open_question()
+    assert engine.question.is_open is True
+    res_correct = engine.mark_correct()
+    assert res_correct["points_awarded"] == 10
+    assert res_correct["new_score"] == 10
+    assert engine.current_match.scores[team_a] == 10
+    assert engine.question.is_open is False
+
+    # Question 2: Wrong (0 points, no negative marking)
+    engine.open_question()
+    res_wrong = engine.mark_wrong()
+    assert res_wrong["penalty"] == 0
+    assert engine.current_match.scores[team_a] == 10  # Score remains unchanged!
+
+    # Rapid Fire for Team B
+    engine.start_rapid_fire(team_id=team_b, duration_seconds=120)
+    assert engine.round.active_team_id == team_b
+    engine.open_question()
+    engine.mark_correct()
+    assert engine.current_match.scores[team_b] == 10
+
+
+def test_buzzer_battle_scoring_and_pass_over(clean_engine: GameEngine):
+    """Buzzer Battle:
+    - +15 correct, -5 wrong
+    - After wrong answer, passes to the OTHER team only, without being reread
+    - If both fail, question closes
+    """
+    engine = clean_engine
+    team_a = "team_1"
+    team_b = "team_2"
+
+    engine.start_buzzer_battle()
+    assert engine.round.phase == RoundPhase.BUZZER_BATTLE.value
+
+    # --- Scenario 1: Direct Correct (+15) ---
+    engine.open_question()
+    assert engine.buzzers.locked is False
+
+    buzz_res = engine.buzz(team_a)
+    assert buzz_res["success"] is True
+    assert engine.buzzers.first_team == team_a
+    assert engine.buzzers.locked is True  # Locks out all others!
+
+    conf = engine.confirm_first_buzz()
+    assert conf["confirmed_team"] == team_a
+
+    mark_res = engine.mark_correct()
+    assert mark_res["points_awarded"] == 15
+    assert engine.current_match.scores[team_a] == 15
+    assert engine.question.is_open is False
+
+
+    # --- Scenario 2: Team A answers wrong (-5), passes to Team B who answers correctly (+15) ---
+    engine.open_question()
+    engine.buzz(team_a)
+    wrong_res = engine.mark_wrong()
+
+    assert wrong_res["penalty"] == 5
+    assert wrong_res["passed_to"] == team_b
+    assert wrong_res["question_closed"] is False
+    assert engine.current_match.scores[team_a] == 10  # 15 - 5 = 10
+    assert engine.buzzers.penalised_team == team_a
+    assert engine.buzzers.passed_to_team == team_b
+    assert engine.buzzers.locked is False  # Unlocked for Team B
+
+    # Team A cannot buzz when question is passed to Team B!
+    with pytest.raises(ValueError, match="passed exclusively to"):
+        engine.buzz(team_a)
+
+    # Team B answers correctly (+15)
+    engine.buzz(team_b)
+    pass_correct = engine.mark_correct()
+    assert pass_correct["team_id"] == team_b
+    assert pass_correct["points_awarded"] == 15
+    assert engine.current_match.scores[team_b] == 15
+    assert engine.question.is_open is False
+
+    # --- Scenario 3: Both teams answer wrong, question closes ---
+    engine.open_question()
+    engine.buzz(team_a)
+    w1 = engine.mark_wrong()
+    assert w1["passed_to"] == team_b
+
+    engine.buzz(team_b)
+    w2 = engine.mark_wrong()
+    assert w2["both_failed"] is True
+    assert w2["question_closed"] is True
+    assert engine.question.is_open is False
+    assert engine.buzzers.locked is True
+
+
+def test_server_arrival_order_locks_out_near_simultaneous_buzz(clean_engine: GameEngine):
+    """The first valid server-handled buzz wins regardless of client timestamps."""
+    engine = clean_engine
+    engine.start_buzzer_battle()
+    engine.open_question()
+
+    first = engine.buzz("team_2", timestamp=200.0)
+    assert first["team_id"] == "team_2"
+    assert engine.buzzers.first_team == "team_2"
+
+    with pytest.raises(ValueError, match="Buzzers are currently locked"):
+        engine.buzz("team_1", timestamp=100.0)
+
+
+def test_question_reveal_skip_and_previous_transitions(clean_engine: GameEngine):
+    engine = clean_engine
+    engine.start_buzzer_battle()
+
+    engine.open_question()
+    first_number = engine.question.current_question.number
+    engine.reveal_answer()
+    assert engine.question.revealed is True
+
+    next_result = engine.next_question()
+    assert next_result["question_number"] != first_number
+    assert engine.question.revealed is False
+
+    previous_result = engine.previous_question()
+    assert previous_result["question_number"] == first_number
+    assert engine.question.is_open is True
+
+
+def test_moderator_can_override_first_buzz_team(clean_engine: GameEngine):
+    engine = clean_engine
+    engine.start_buzzer_battle()
+    engine.open_question()
+    engine.buzz("team_1")
+
+    result = engine.confirm_first_buzz("team_2")
+    assert result["confirmed_team"] == "team_2"
+    assert engine.buzzers.first_team == "team_2"
+
+
+def test_spoken_question_matrix_counters_and_team_colors(clean_engine: GameEngine):
+    engine = clean_engine
+    engine.set_total_questions(3)
+    engine.start_buzzer_battle()
+    engine.open_question()
+    assert engine.question_matrix.to_dict()["statuses"][0]["status"] == "active"
+
+    engine.buzz("team_1")
+    engine.mark_correct()
+    matrix = engine.question_matrix.to_dict()
+    assert matrix["questions_asked"] == 1
+    assert matrix["questions_remaining"] == 2
+    assert matrix["team_a_correct"] == 1
+    assert matrix["statuses"][0]["winner_side"] == "A"
+    assert engine.teams["team_1"].accent_color == "#0ea5e9"
+    assert engine.teams["team_2"].accent_color == "#f97316"
+    public_question = engine.get_state()["question"]["current_question"]
+    assert "text" not in public_question
+    assert "answer" not in public_question
+
+
+def test_auto_alternate_routes_sequential_questions(clean_engine: GameEngine):
+    engine = clean_engine
+    engine.configure_routing("AUTO_ALTERNATE", start_side="A")
+    engine.start_rapid_fire("team_1")
+    engine.set_total_questions(3)
+
+    engine.open_question()
+    assert engine.round.active_team_id == "team_1"
+    engine.mark_wrong()
+    engine.open_question()
+    assert engine.round.active_team_id == "team_2"
+    engine.mark_wrong()
+    engine.open_question()
+    assert engine.round.active_team_id == "team_1"
+
+
+def test_auto_alternate_scores_next_question_for_other_team(clean_engine: GameEngine):
+    engine = clean_engine
+    engine.start_rapid_fire("team_1")
+    engine.configure_routing("AUTO_ALTERNATE", start_side="A")
+    engine.open_question()
+    engine.mark_correct()
+    engine.next_question()
+    assert engine.round.active_team_id == "team_2"
+    result = engine.mark_correct()
+    assert result["team_id"] == "team_2"
+    assert engine.current_match.scores["team_2"] == 10
+
+
+def test_team_block_switch_turn_resets_timer(clean_engine: GameEngine):
+    engine = clean_engine
+    engine.start_rapid_fire("team_1")
+    engine.set_total_questions(20)
+    engine.configure_routing("TEAM_BLOCK", start_side="A", block_size=10)
+
+    engine.select_question(1)
+    assert engine.round.active_team_id == "team_1"
+    engine.select_question(10)
+    assert engine.round.active_team_id == "team_1"
+    engine.select_question(11)
+    assert engine.round.active_team_id == "team_2"
+    engine.switch_turn(120)
+    assert engine.round.active_team_id == "team_1"
+    assert engine.round.timer_seconds_remaining == 120
+
+
+def test_undo_restores_score_matrix_and_counters(clean_engine: GameEngine):
+    engine = clean_engine
+    engine.start_rapid_fire("team_1")
+    engine.set_total_questions(3)
+    engine.open_question()
+    engine.mark_correct()
+    assert engine.current_match.scores["team_1"] == 10
+    assert engine.question_matrix.questions_asked == 1
+
+    result = engine.undo_last_action()
+    assert result["undone"] == "mark_correct"
+    assert engine.current_match.scores["team_1"] == 0
+    assert engine.question_matrix.questions_asked == 1
+    assert engine.question_matrix.statuses[0]["status"] == "active"
+
+
+def test_violation_warning_and_foul_penalty(clean_engine: GameEngine):
+    engine = clean_engine
+    warning = engine.apply_violation("team_1", "No Mic")
+    assert warning["penalty"] == 0
+    engine.apply_violation("team_1", "Audience Coaching", penalty=5)
+    assert engine.current_match.scores["team_1"] == -5
+    assert engine.log[-1].action == "foul_penalty"
+
+
+def test_first_buzz_locks_and_arrival_order(clean_engine: GameEngine):
+    """First buzz locks buzzers; second buzz is rejected."""
+    engine = clean_engine
+    engine.start_buzzer_battle()
+    engine.open_question()
+
+    res1 = engine.buzz("team_1", timestamp=100.0)
+    assert res1["success"] is True
+    assert engine.buzzers.first_team == "team_1"
+    assert engine.buzzers.locked is True
+
+    # Second buzz should be rejected because buzzers are locked
+    with pytest.raises(ValueError, match="locked"):
+        engine.buzz("team_2", timestamp=100.1)
+
+
+def test_sudden_death_on_tie(clean_engine: GameEngine):
+    """Tie at match end triggers SUDDEN_DEATH with buzzer questions;
+    first correct answer wins immediately.
+    """
+    engine = clean_engine
+    team_a = "team_1"
+    team_b = "team_2"
+
+    # Both teams tied at 0
+    end_res = engine.end_match()
+    assert end_res["status"] == "TIED"
+    assert engine.round.phase == RoundPhase.SUDDEN_DEATH.value
+
+    # Open Sudden Death buzzer question
+    engine.open_question()
+    assert engine.buzzers.locked is False
+
+    # Team B buzzes and answers correctly
+    engine.buzz(team_b)
+    correct_res = engine.mark_correct()
+
+    # Team B wins immediately!
+    assert correct_res["sudden_death_winner"] == team_b
+    assert engine.current_match.winner_id == team_b
+    assert engine.current_match.loser_id == team_a
+    assert engine.current_match.status == "COMPLETED"
+    assert engine.round.phase == RoundPhase.RESULT.value
+    assert engine.teams[team_b].win_loss["wins"] == 1
+    assert engine.teams[team_a].win_loss["losses"] == 1
+
+
+def test_admin_adjust_score(clean_engine: GameEngine):
+    """Admin score adjustment can add or deduct points with audit reason."""
+    engine = clean_engine
+    adj_pos = engine.admin_adjust_score("team_1", delta=10, reason="Technical glitch compensation")
+    assert adj_pos["new_score"] == 10
+    assert engine.current_match.scores["team_1"] == 10
+
+    adj_neg = engine.admin_adjust_score("team_1", delta=-5, reason="Rule violation penalty")
+    assert adj_neg["new_score"] == 5
+    assert engine.current_match.scores["team_1"] == 5
+
+
+def test_invalid_action_rejections(clean_engine: GameEngine):
+    """Engine cleanly rejects invalid actions with descriptive errors."""
+    engine = clean_engine
+
+    # Marking answer when no question is open
+    with pytest.raises(ValueError, match="No open question"):
+        engine.mark_correct()
+
+    with pytest.raises(ValueError, match="No open question"):
+        engine.mark_wrong()
+
+    # Buzzing when in IDLE phase
+    with pytest.raises(ValueError, match="No question is currently open"):
+        engine.buzz("team_1")
+
+    # Buzzing during Rapid Fire
+    engine.start_rapid_fire("team_1", 120)
+    engine.open_question()
+    with pytest.raises(ValueError, match="not allowed during phase 'RAPID_FIRE'"):
+        engine.buzz("team_1")
+
+    # Buzzing team not in current match
+    engine.start_buzzer_battle()
+    engine.open_question()
+    with pytest.raises(ValueError, match="not in current match"):
+        engine.buzz("team_12")
+
+    # Revealing answer when no question active
+    engine.question.current_question = None
+    with pytest.raises(ValueError, match="No question currently active"):
+        engine.reveal_answer()
+
+    # Confirming first buzz when no buzz occurred
+    with pytest.raises(ValueError, match="No team has buzzed"):
+        engine.confirm_first_buzz()
+
+
+def test_question_tracking_no_repeats_and_warning(clean_engine: GameEngine):
+    """Verifies that:
+    1. Questions are tracked and never repeated across the event.
+    2. When the bank is nearly empty (<= 2 left), a warning is issued to the moderator.
+    3. When the bank is exhausted, ValueError is raised instead of wrapping around.
+    """
+    engine = clean_engine
+    opened_numbers = []
+
+    # Total questions in SampleQuestionProvider is 5
+    total = engine.question_provider.count()
+    assert total == 5
+
+    # Question 1 (4 remaining, no warning)
+    res1 = engine.open_question()
+    opened_numbers.append(engine.question.current_question.number)
+    assert engine.question_bank_warning is None
+    engine.mark_correct("team_1")
+
+    # Question 2 (3 remaining, no warning)
+    res2 = engine.open_question()
+    opened_numbers.append(engine.question.current_question.number)
+    assert engine.question_bank_warning is None
+    engine.mark_correct("team_1")
+
+    # Question 3 (2 remaining -> warning triggered!)
+    res3 = engine.open_question()
+    opened_numbers.append(engine.question.current_question.number)
+    assert engine.question_bank_warning is not None
+    assert "nearly empty" in engine.question_bank_warning
+    assert "2 question(s) remaining" in engine.question_bank_warning
+    engine.mark_correct("team_1")
+
+    # Question 4 (1 remaining -> warning continues)
+    res4 = engine.open_question()
+    opened_numbers.append(engine.question.current_question.number)
+    assert engine.question_bank_warning is not None
+    assert "1 question(s) remaining" in engine.question_bank_warning
+    engine.mark_correct("team_1")
+
+    # Question 5 (0 remaining -> warning continues)
+    res5 = engine.open_question()
+    opened_numbers.append(engine.question.current_question.number)
+    assert engine.question_bank_warning is not None
+    assert "0 question(s) remaining" in engine.question_bank_warning
+    engine.mark_correct("team_1")
+
+    # All 5 opened numbers must be unique
+    assert len(set(opened_numbers)) == 5
+    assert set(opened_numbers) == {1, 2, 3, 4, 5}
+
+    # Attempting to open 6th question must raise ValueError (NEVER wraps around!)
+    with pytest.raises(ValueError, match="Question bank exhausted"):
+        engine.open_question()

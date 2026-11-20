@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EEECi FA'26 — Tournament Admin Panel</title>
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body class="admin-body">
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       GATE: PIN AUTH SCREEN (PIN: 2222)
+  ═══════════════════════════════════════════════════════════════ -->
+  <section id="pinGate" class="pin-gate">
+    <div class="gate-card">
+      <div class="gate-brand">
+        <svg class="gate-emblem" viewBox="0 0 48 48" fill="none">
+          <polygon points="24,2 44,13 44,35 24,46 4,35 4,13" stroke="#F97316" stroke-width="2.5" fill="rgba(249,115,22,0.12)"/>
+          <path d="M14 17 H34 V22 H20 V25 H30 V29 H20 V32 H34" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="24" cy="24" r="2" fill="#F97316"/>
+        </svg>
+        <div>
+          <p class="eyebrow">EEECi FA'26 • MODULE 06</p>
+          <h1 class="gate-title">TOURNAMENT ADMIN</h1>
+        </div>
+      </div>
+      <p class="gate-desc">Enter the verified Admin PIN (Laptop 3) to manage brackets, rosters, and audited score adjustments.</p>
+      <form id="pinForm" class="gate-form">
+        <label for="pinInput" class="form-label">Admin PIN</label>
+        <div class="pin-wrap">
+          <input id="pinInput" class="pin-input" type="password" inputmode="numeric" autocomplete="current-password" placeholder="••••" required>
+        </div>
+        <button class="btn btn-primary btn-full" type="submit">Unlock Admin Console</button>
+        <p id="pinError" class="error" role="alert"></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       MAIN ADMIN CONSOLE APPLICATION
+  ═══════════════════════════════════════════════════════════════ -->
+  <main id="adminApp" class="admin-shell hidden">
+
+    <!-- TOP BAR -->
+    <header class="topbar">
+      <div class="topbar-brand">
+        <svg class="topbar-emblem" viewBox="0 0 48 48" fill="none">
+          <polygon points="24,2 44,13 44,35 24,46 4,35 4,13" stroke="#F97316" stroke-width="2.5" fill="rgba(249,115,22,0.12)"/>
+          <path d="M14 17 H34 V22 H20 V25 H30 V29 H20 V32 H34" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="24" cy="24" r="2" fill="#F97316"/>
+        </svg>
+        <div>
+          <p class="eyebrow">EEECi FA'26 • EEE BRAIN BATTLE</p>
+          <h1 class="topbar-title">TOURNAMENT ADMIN CONSOLE</h1>
+        </div>
+      </div>
+      <div class="top-actions">
+        <a href="/buzzers" class="btn btn-outline" target="_blank" style="text-decoration:none;">Buzzer Manager</a>
+        <div id="actionToast" class="action-toast hidden"></div>
+        <label class="stage-lock" for="stageLockToggle">
+          <input id="stageLockToggle" type="checkbox">
+          <span>Lock Stage Devices</span>
+        </label>
+        <span id="statusBanner" class="status reconnecting">CONNECTING</span>
+        <span id="latencyBadge" class="latency">-- ms</span>
+        <button id="logoutBtn" class="btn btn-outline">Lock Admin</button>
+      </div>
+    </header>
+
+    <!-- LIVE STAGE OVERVIEW STRIP -->
+    <section class="stagebar">
+      <div class="stage-item">
+        <span class="stage-label">TOURNAMENT STAGE</span>
+        <strong id="stageDisplay" class="stage-value">QUALIFIER</strong>
+      </div>
+      <div class="stage-item">
+        <span class="stage-label">ACTIVE MATCH</span>
+        <strong id="matchDisplay" class="stage-value accent">M01 / 13</strong>
+      </div>
+      <div class="stage-item">
+        <span class="stage-label">ROUND PHASE</span>
+        <strong id="phaseDisplay" class="stage-value">IDLE</strong>
+      </div>
+      <div class="stage-item">
+        <span class="stage-label">ACTIVE MATCH TEAMS</span>
+        <strong id="activeTeamsDisplay" class="stage-value">-- vs --</strong>
+      </div>
+      <div class="stage-item">
+        <span class="stage-label">TOURNAMENT CHAMPION</span>
+        <strong id="championDisplay" class="stage-value champion-text">UNDECIDED</strong>
+      </div>
+    </section>
+
+    <!-- MODULE 1: PROJECTOR DISPLAY CONTROLLER -->
+    <section class="admin-panel">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">LIVE VENUE OUTPUT</p>
+          <h2>Projector Display Controller</h2>
+        </div>
+        <div class="mode-indicator">
+          <span>Active Display Mode:</span>
+          <strong id="displayViewBadge" class="pill-badge">AUTO</strong>
+        </div>
+      </div>
+      <p class="panel-desc">Overrides what Audience Projectors (/display) show in the Seminar Hall. Auto mode follows active match rounds and finales automatically.</p>
+      <div class="display-controller-grid">
+        <button class="btn btn-view" data-display-view="match">Match View</button>
+        <button class="btn btn-view" data-display-view="bracket">Tournament Bracket</button>
+        <button class="btn btn-view" data-display-view="result">Finale / Champion</button>
+        <button class="btn btn-warning btn-view" data-display-view="auto">Auto Follow Live Match</button>
+      </div>
+    </section>
+
+    <!-- MODULE 2: 13-MATCH BRACKET & WILD CARD ENGINE -->
+    <section class="admin-panel">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">TOURNAMENT PROGRESSION</p>
+          <h2>13-Match Interactive Bracket &amp; Wild-Card Engine</h2>
+        </div>
+        <div class="panel-actions">
+          <button id="btnRepopulateQf" class="btn btn-outline btn-sm">Populate Quarterfinals (6W + 2WC)</button>
+        </div>
+      </div>
+
+      <!-- Wild-Card Tie Alert Banner (Hidden unless tied) -->
+      <div id="wildCardTieBanner" class="wildcard-alert-box hidden">
+        <div class="wildcard-alert-content">
+          <strong class="alert-title">⚠️ QUALIFIER WILD-CARD TIE DETECTED</strong>
+          <p id="wildCardTieText">Multiple losing teams tied for the 2nd wild-card spot. Conduct a sudden-death question and select the winner below:</p>
+          <div class="tie-breaker-controls">
+            <select id="tieBreakerWinnerSelect" class="form-select"></select>
+            <button id="btnResolveTie" class="btn btn-primary btn-sm">Confirm Wild-Card Winner</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4-Stage Visual Bracket -->
+      <div class="bracket-converge">
+        <div class="converge-wing">
+          <div class="converge-kicker">LEFT WING <span>M1–M3 → M7–M8 → M11</span></div>
+          <div class="converge-cols">
+            <div class="bracket-col">
+              <div class="bracket-col-header"><h3>QUALIFIERS</h3><span class="sub-badge">M1–M3</span></div>
+              <div id="bracketLeftQual" class="bracket-match-list"></div>
+            </div>
+            <div class="bracket-col">
+              <div class="bracket-col-header"><h3>QUARTERFINALS</h3><span class="sub-badge">M7–M8</span></div>
+              <div id="bracketLeftQf" class="bracket-match-list"></div>
+            </div>
+            <div class="bracket-col">
+              <div class="bracket-col-header"><h3>SEMIFINAL</h3><span class="sub-badge">M11</span></div>
+              <div id="bracketLeftSf" class="bracket-match-list"></div>
+            </div>
+          </div>
+        </div>
+        <div class="converge-center">
+          <div class="bracket-col final-col">
+            <div class="bracket-col-header"><h3>GRAND FINAL</h3><span class="sub-badge">M13</span></div>
+            <div id="bracketFinal" class="bracket-match-list"></div>
+          </div>
+        </div>
+        <div class="converge-wing">
+          <div class="converge-kicker">RIGHT WING <span>M12 ← M9–M10 ← M4–M6</span></div>
+          <div class="converge-cols">
+            <div class="bracket-col">
+              <div class="bracket-col-header"><h3>SEMIFINAL</h3><span class="sub-badge">M12</span></div>
+              <div id="bracketRightSf" class="bracket-match-list"></div>
+            </div>
+            <div class="bracket-col">
+              <div class="bracket-col-header"><h3>QUARTERFINALS</h3><span class="sub-badge">M9–M10</span></div>
+              <div id="bracketRightQf" class="bracket-match-list"></div>
+            </div>
+            <div class="bracket-col">
+              <div class="bracket-col-header"><h3>QUALIFIERS</h3><span class="sub-badge">M4–M6</span></div>
+              <div id="bracketRightQual" class="bracket-match-list"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Wild-Card Ranking Leaderboard -->
+      <div class="wildcard-card">
+        <div class="card-title-sm">
+          <h3>Qualifier Losing Teams — Automatic Top-2 Wild-Card Leaderboard</h3>
+          <span class="muted-note">Top 2 highest-scoring losers advance to Quarterfinals (Matches 9 &amp; 10)</span>
+        </div>
+        <div id="wildCardLeaderboard" class="wildcard-table-wrap"></div>
+      </div>
+    </section>
+
+    <!-- TWO-COLUMN GRID: ROSTER MANAGER + SCORE CORRECTIONS -->
+    <div class="admin-two-col">
+
+      <!-- MODULE 3: 12-TEAM ROSTER & ACCENT COLOR MANAGER -->
+      <section class="admin-panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">PARTICIPANT REGISTRATION</p>
+            <h2>12-Team Roster &amp; Color Manager</h2>
+          </div>
+        </div>
+
+        <!-- Team Selector Tabs / Grid -->
+        <div class="team-edit-card">
+          <div class="form-row">
+            <label class="form-label" for="teamSelect">Select Team to Edit</label>
+            <select id="teamSelect" class="form-select"></select>
+          </div>
+
+          <form id="teamEditorForm" class="team-editor-form">
+            <div class="form-grid-2">
+              <label class="form-label">
+                Team Name
+                <input id="teamNameInput" class="form-input" required>
+              </label>
+              <label class="form-label">
+                Accent Color
+                <div class="color-picker-wrap">
+                  <input id="accentInput" type="color" class="color-picker-input" value="#0ea5e9">
+                  <div class="color-presets">
+                    <button type="button" class="color-pill" data-color="#0ea5e9" style="background:#0ea5e9;" title="Cyan"></button>
+                    <button type="button" class="color-pill" data-color="#f97316" style="background:#f97316;" title="Orange"></button>
+                    <button type="button" class="color-pill" data-color="#10b981" style="background:#10b981;" title="Emerald"></button>
+                    <button type="button" class="color-pill" data-color="#8b5cf6" style="background:#8b5cf6;" title="Violet"></button>
+                    <button type="button" class="color-pill" data-color="#f43f5e" style="background:#f43f5e;" title="Rose"></button>
+                    <button type="button" class="color-pill" data-color="#facc15" style="background:#facc15;" title="Gold"></button>
+                  </div>
+                </div>
+              </label>
+            </div>
+
+            <div class="form-grid-2">
+              <label class="form-label">
+                Member 1
+                <input id="member1Input" class="form-input" placeholder="Primary Member Name" required>
+              </label>
+              <label class="form-label">
+                Member 2 (Optional)
+                <input id="member2Input" class="form-input" placeholder="Secondary Member Name">
+              </label>
+            </div>
+
+            <label class="form-label">
+              Designated Speaker
+              <select id="speakerSelect" class="form-select" required></select>
+            </label>
+
+            <button class="btn btn-primary btn-full" type="submit">Save Team &amp; Synchronize Roles</button>
+          </form>
+        </div>
+
+        <!-- 12-Team Quick Cards -->
+        <div id="rosterList" class="roster-card-grid"></div>
+      </section>
+
+      <!-- MODULE 4: AUDITED SCORE ADJUSTMENTS -->
+      <section class="admin-panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">RULEBOOK INTERVENTION</p>
+            <h2>Audited Manual Score Adjustments</h2>
+          </div>
+        </div>
+        <p class="panel-desc">All score adjustments are broadcast live to all displays and permanently recorded in the official event audit trail. A mandatory reason is required.</p>
+
+        <form id="scoreAdjustmentForm" class="score-adjust-form">
+          <label class="form-label">
+            Target Team
+            <select id="scoreTeamSelect" class="form-select" required></select>
+          </label>
+
+          <div class="score-current-banner">
+            <span>Current Recorded Score:</span>
+            <strong id="currentTeamScoreDisplay" class="score-num">0</strong>
+          </div>
+
+          <div class="form-grid-2">
+            <label class="form-label">
+              Adjustment Mode
+              <select id="adjustmentMode" class="form-select">
+                <option value="delta">Add / Subtract Delta (+/-)</option>
+                <option value="set">Set Exact Score</option>
+              </select>
+            </label>
+            <label class="form-label">
+              <span id="scoreValueLabel">Point Delta (+/-)</span>
+              <input id="scoreValueInput" type="number" class="form-input" value="10" required>
+            </label>
+          </div>
+
+          <label class="form-label">
+            Mandatory Official Reason
+            <input id="scoreReasonInput" class="form-input" placeholder="e.g. Moderator miscount, Rulebook violation ruling" required>
+          </label>
+
+          <div class="quick-reasons">
+            <span>Quick Presets:</span>
+            <button type="button" class="btn-preset" data-reason="Moderator scoring correction">Scoring Correction</button>
+            <button type="button" class="btn-preset" data-reason="Technical equipment timeout">Tech Glitch</button>
+            <button type="button" class="btn-preset" data-reason="Judges rulebook ruling upheld">Judges Ruling</button>
+            <button type="button" class="btn-preset" data-reason="Official protest resolution">Protest Resolution</button>
+          </div>
+
+          <button class="btn btn-danger btn-full" type="submit">Apply Audited Score Adjustment</button>
+        </form>
+      </section>
+
+    </div>
+
+    <!-- MODULE 5: AUDIT LOG VIEWER & REPORT EXPORTS -->
+    <section class="admin-panel">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">TOURNAMENT RECORDS</p>
+          <h2>Official Audit Trail &amp; Post-Event Reports</h2>
+        </div>
+        <div class="panel-actions">
+          <button id="btnExportCsv" class="btn btn-outline btn-sm">Export Audit Sheet (CSV)</button>
+          <button id="btnExportJson" class="btn btn-outline btn-sm">Export Snapshot (JSON)</button>
+          <button id="btnRefreshLogs" class="btn btn-outline btn-sm">Refresh Logs</button>
+          <button id="btnResetTournament" class="btn btn-danger btn-sm">Reset Entire Tournament</button>
+        </div>
+      </div>
+
+      <!-- Filter Pills -->
+      <div class="log-filter-bar">
+        <span class="filter-label">Filter Events:</span>
+        <button class="btn-filter active" data-filter="all">All Entries</button>
+        <button class="btn-filter" data-filter="score">Score Adjustments</button>
+        <button class="btn-filter" data-filter="fouls">Fouls &amp; Warnings</button>
+        <button class="btn-filter" data-filter="bracket">Bracket &amp; Stages</button>
+        <button class="btn-filter" data-filter="undo">Undo Operations</button>
+      </div>
+
+      <!-- Audit Log Table -->
+      <div class="table-wrap">
+        <table class="audit-table">
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>Action / Event</th>
+              <th>Target / Team</th>
+              <th>Details / Points</th>
+              <th>Audited Reason</th>
+            </tr>
+          </thead>
+          <tbody id="auditLogTbody">
+            <tr>
+              <td colspan="5" class="text-center text-muted">Loading audit entries...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Modal: Safe Tournament Reset Confirmation -->
+  <div id="resetModal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h3 class="modal-title">⚠️ DANGER: RESET ENTIRE TOURNAMENT</h3>
+      <p class="modal-desc">This action will completely wipe all match scores, bracket progression, and question matrix statuses back to initial Qualifier Stage. This cannot be undone.</p>
+      <label class="form-label" for="resetConfirmInput">Type <strong class="text-danger">RESET</strong> below to confirm:</label>
+      <input id="resetConfirmInput" class="form-input text-center" placeholder="Type RESET">
+      <div class="modal-actions">
+        <button id="btnCancelReset" class="btn btn-outline">Cancel</button>
+        <button id="btnConfirmReset" class="btn btn-danger" disabled>Execute Reset</button>
+      </div>
+    </div>
+  </div>
+
+  <aside id="ledgerDrawer" class="ledger-drawer hidden" aria-hidden="true">
+    <div class="ledger-panel">
+      <header class="ledger-head">
+        <div>
+          <p class="eyebrow">TEAM MATCH &amp; SCORE AUDIT</p>
+          <h2 id="ledgerTitle">Ledger</h2>
+        </div>
+        <button id="ledgerClose" class="btn btn-outline btn-sm" type="button">Close</button>
+      </header>
+      <div id="ledgerBody" class="ledger-body"></div>
+    </div>
+  </aside>
+
+  <script src="/static/client.js"></script>
+  <script src="/static/admin.js"></script>
+</body>
+</html>

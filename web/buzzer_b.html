@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>EEECi FA'26 — Buzzer B</title>
+  <link rel="stylesheet" href="/static/buzzer.css">
+</head>
+<body data-role="buzzer_b">
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       GATE: PAIRING CODE SCREEN
+  ═══════════════════════════════════════════════════════════════ -->
+  <section id="pairingGate" class="pairing-gate">
+    <div class="pairing-card">
+      <div class="brand-header">
+        <svg class="brand-emblem" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <polygon points="24,2 44,13 44,35 24,46 4,35 4,13" stroke="#F97316" stroke-width="2.5" fill="rgba(249,115,22,0.12)"/>
+          <path d="M14 17 H34 V22 H20 V25 H30 V29 H20 V32 H34" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="24" cy="24" r="2" fill="#F97316"/>
+        </svg>
+        <div>
+          <p class="brand">EEECi FA'26 • MODULE 06</p>
+          <h1 class="pairing-title">PAIR BUZZER B</h1>
+        </div>
+      </div>
+      <p class="pairing-instruction">Scan the Buzzer B QR code from the Control Hub or verify the pairing code below to connect.</p>
+      <form id="pairingForm" class="pairing-form">
+        <label for="pairingInput" class="pairing-label">Pairing Code</label>
+        <div class="input-wrap">
+          <input id="pairingInput" class="pairing-input" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="BUZZ_B" required>
+        </div>
+        <button type="submit" class="pairing-btn">CONNECT BUZZER</button>
+        <p id="pairingError" class="pairing-error" role="alert"></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       MAIN BUZZER APP
+  ═══════════════════════════════════════════════════════════════ -->
+  <main id="buzzerApp" class="buzzer-shell hidden">
+
+    <!-- TOP HEADER / TELEMETRY CARD -->
+    <header class="buzzer-top">
+      <div class="top-row">
+        <div class="identity">
+          <div class="brand-tag">EEECi FA'26</div>
+          <div id="roleLabel" class="role-label">BUZZER B</div>
+          <h1 id="teamName">TEAM B</h1>
+          <p id="speakerName">DESIGNATED SPEAKER: --</p>
+        </div>
+        <div class="score-card">
+          <span class="score-label">POINTS</span>
+          <div id="score" class="score">0</div>
+        </div>
+      </div>
+
+      <div class="telemetry-bar">
+        <div class="telemetry-group">
+          <span id="connection" class="connection reconnecting">RECONNECTING...</span>
+          <span id="latency" class="latency">-- ms</span>
+        </div>
+        <div class="telemetry-group">
+          <span id="wakeBadge" class="wake-badge">SCREEN AWAKE: WAITING</span>
+          <button id="soundToggle" class="sound-toggle" type="button">SOUND: OFF</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- LIVE FEEDBACK NOTICE -->
+    <div id="feedback" class="feedback" role="status"></div>
+
+    <!-- MAIN BUZZER CENTERPIECE -->
+    <section class="buzzer-main">
+      <button id="buzzButton" class="buzz-button locked" type="button" aria-label="Buzzer">
+        <strong id="buttonLabel">LOCKED</strong>
+        <span id="buttonSubtitle">BUZZER LOCKED — WAIT FOR HOST</span>
+      </button>
+    </section>
+
+    <!-- FOOTER STATUS -->
+    <footer class="buzzer-footer">
+      <p id="statusLine">Pairing required</p>
+      <p id="fairnessLine">SERVER-AUTHORITATIVE ARRIVAL ORDER</p>
+    </footer>
+
+  </main>
+
+  <script src="/static/client.js"></script>
+  <script src="/static/buzzer.js"></script>
+</body>
+</html>

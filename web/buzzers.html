@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EEECi FA'26 — Buzzer &amp; Hardware Manager</title>
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/buzzers.css">
+</head>
+<body class="buzzers-body">
+
+  <div class="buzzers-wrap">
+    <!-- TOP BAR -->
+    <header class="buzzers-header">
+      <div class="brand">
+        <svg class="brand-emblem" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <polygon points="24,2 44,13 44,35 24,46 4,35 4,13" stroke="#F97316" stroke-width="2.5" fill="rgba(249,115,22,0.12)"/>
+          <path d="M14 17 H34 V22 H20 V25 H30 V29 H20 V32 H34" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="24" cy="24" r="2" fill="#F97316"/>
+        </svg>
+        <div>
+          <p class="eyebrow">EEECi FA'26 • MODULE 06</p>
+          <h1 class="header-title">BUZZER &amp; HARDWARE MANAGER</h1>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <div class="mode-pill" id="activeModePill">
+          <span class="pill-dot"></span>
+          <span id="activeModeText">ESP32 HARDWARE PRIMARY</span>
+        </div>
+        <nav class="nav-links">
+          <a href="/hub" class="btn btn-outline btn-sm">Control Hub</a>
+          <a href="/display" target="_blank" class="btn btn-outline btn-sm">Projector</a>
+          <a href="/moderator" target="_blank" class="btn btn-outline btn-sm">Moderator</a>
+          <a href="/admin" target="_blank" class="btn btn-outline btn-sm">Admin</a>
+        </nav>
+      </div>
+    </header>
+
+    <!-- PROMINENT 2-CARD SOURCE SWITCHER -->
+    <section class="mode-cards-grid">
+      
+      <!-- CARD 1: ESP32 HARDWARE BUZZERS -->
+      <article class="mode-card esp32-card" id="cardEsp32">
+        <div class="card-top">
+          <div class="card-heading">
+            <span class="card-badge primary-badge">PRIMARY SOURCE</span>
+            <h2>ESP32 Breadboard Hardware</h2>
+          </div>
+          <span id="esp32ConnStatus" class="conn-pill offline">SEARCHING ON UDP 4210...</span>
+        </div>
+        <p class="card-desc">Authoritative physical breadboard buzzer on venue hotspot. Low-latency UDP packets (4210 in / 4211 out) with anti-bounce lock.</p>
+
+        <div class="specs-grid">
+          <div class="spec-cell">
+            <span class="spec-label">INBOUND UDP</span>
+            <strong class="spec-val">4210</strong>
+          </div>
+          <div class="spec-cell">
+            <span class="spec-label">OUTBOUND UDP</span>
+            <strong class="spec-val">4211</strong>
+          </div>
+          <div class="spec-cell">
+            <span class="spec-label">SOURCE IP</span>
+            <strong id="esp32LockedIp" class="spec-val">—</strong>
+          </div>
+          <div class="spec-cell">
+            <span class="spec-label">LAST COMMAND</span>
+            <strong id="esp32LastCmd" class="spec-val">—</strong>
+          </div>
+        </div>
+
+        <div class="card-actions">
+          <button id="btnSetEsp32" class="btn btn-primary btn-lg" type="button">
+            Activate ESP32 Mode
+          </button>
+          <div class="sub-actions">
+            <button id="btnEsp32Test" class="btn btn-outline" type="button">Test Hardware LEDs (TEST)</button>
+            <button id="btnEsp32Reset" class="btn btn-danger" type="button">Reset Hardware Lock (RESET)</button>
+          </div>
+        </div>
+      </article>
+
+      <!-- CARD 2: MOBILE PHONE BUZZERS -->
+      <article class="mode-card mobile-card" id="cardMobile">
+        <div class="card-top">
+          <div class="card-heading">
+            <span class="card-badge backup-badge">BACKUP FAILOVER</span>
+            <h2>Mobile Phone WebSockets</h2>
+          </div>
+          <div class="mobile-status-strip">
+            <span id="mobileAStatus" class="conn-pill offline">PHONE A: OFFLINE</span>
+            <span id="mobileBStatus" class="conn-pill offline">PHONE B: OFFLINE</span>
+          </div>
+        </div>
+        <p class="card-desc">Zero-install browser buzzers via hotspot Wi-Fi. Instant failover if physical breadboard hardware loses power or Wi-Fi link.</p>
+
+        <div class="qr-duo">
+          <!-- TEAM A QR -->
+          <div class="qr-col">
+            <div class="qr-header">
+              <strong class="team-a-label">TEAM A BUZZER</strong>
+              <small>CODE: <code>BUZZ_A</code></small>
+            </div>
+            <div class="qr-frame" id="qrContainerA">
+              <div class="qr-placeholder">Loading QR...</div>
+            </div>
+            <a id="urlLinkA" href="/buzzer/a" target="_blank" class="qr-url">/buzzer/a</a>
+            <button id="btnTestBuzzA" class="btn btn-outline btn-xs" type="button">Test Phone A Pulse</button>
+          </div>
+
+          <!-- TEAM B QR -->
+          <div class="qr-col">
+            <div class="qr-header">
+              <strong class="team-b-label">TEAM B BUZZER</strong>
+              <small>CODE: <code>BUZZ_B</code></small>
+            </div>
+            <div class="qr-frame" id="qrContainerB">
+              <div class="qr-placeholder">Loading QR...</div>
+            </div>
+            <a id="urlLinkB" href="/buzzer/b" target="_blank" class="qr-url">/buzzer/b</a>
+            <button id="btnTestBuzzB" class="btn btn-outline btn-xs" type="button">Test Phone B Pulse</button>
+          </div>
+        </div>
+
+        <div class="card-actions">
+          <button id="btnSetMobile" class="btn btn-warning btn-lg" type="button">
+            Activate Mobile Failover
+          </button>
+          <button id="btnTestBuzzAll" class="btn btn-outline" type="button">
+            Test Both Mobile Phones Simultaneously
+          </button>
+        </div>
+      </article>
+
+    </section>
+
+    <!-- LIVE BUZZER SIGNAL MONITOR -->
+    <section class="monitor-panel">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">REAL-TIME TELEMETRY</p>
+          <h2>Live Buzzer Signal Monitor</h2>
+        </div>
+        <div class="monitor-actions">
+          <button id="btnClearBuzz" class="btn btn-outline btn-sm" type="button">Clear Active Buzz</button>
+          <button id="btnClearLog" class="btn btn-ghost btn-sm" type="button">Clear Log</button>
+        </div>
+      </div>
+
+      <div class="strike-display" id="strikeDisplay">
+        <div class="strike-status" id="strikeStatus">BUZZERS ARMED — READY FOR HIT</div>
+        <div class="strike-metrics">
+          <div class="metric-box">
+            <span class="metric-lbl">ACTIVE SOURCE</span>
+            <strong id="metricSource" class="metric-val">ESP32 PRIMARY</strong>
+          </div>
+          <div class="metric-box">
+            <span class="metric-lbl">LAST FIRST HIT</span>
+            <strong id="metricTeam" class="metric-val">—</strong>
+          </div>
+          <div class="metric-box">
+            <span class="metric-lbl">FAIRNESS DELTA</span>
+            <strong id="metricDelta" class="metric-val">—</strong>
+          </div>
+          <div class="metric-box">
+            <span class="metric-lbl">ROUND LOCK</span>
+            <strong id="metricLock" class="metric-val">LOCKED</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="signal-feed-wrap">
+        <div class="feed-header">Live Protocol Stream (UDP Packets &amp; WebSocket Acks)</div>
+        <pre id="signalFeed" class="signal-feed">Initializing telemetry monitor...</pre>
+      </div>
+    </section>
+
+  </div>
+
+  <script src="/static/client.js"></script>
+  <script src="/static/buzzers.js"></script>
+</body>
+</html>

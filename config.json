@@ -1,0 +1,34 @@
+{
+  "host": "0.0.0.0",
+  "port": 8000,
+  "data_dir": "data",
+  "esp32": {
+    "enabled": true,
+    "port": 4210,
+    "out_port": 4211,
+    "anti_bounce_ms": 150
+  },
+  "stage": {
+    "authorized_ips": ["127.0.0.1", "192.168.137.1"]
+  },
+  "auth": {
+    "display": {
+      "pin": ""
+    },
+    "moderator": {
+      "pin": "1111"
+    },
+    "admin": {
+      "pin": "2222"
+    },
+    "hub": {
+      "pin": "3333"
+    },
+    "buzzer_a": {
+      "pairing_code": "BUZZ_A"
+    },
+    "buzzer_b": {
+      "pairing_code": "BUZZ_B"
+    }
+  }
+}

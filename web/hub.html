@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EEECi FA'26 — Control Hub</title>
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/hub.css">
+</head>
+<body class="hub-body">
+
+  <!-- ══════════════════════════════════════════════════════════
+       GATE: PIN AUTH SCREEN
+  ═══════════════════════════════════════════════════════════ -->
+  <section id="hubGate" class="hub-gate">
+    <div class="gate-card">
+      <!-- Brand emblem -->
+      <div class="gate-brand">
+        <svg class="gate-svg" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <polygon points="24,2 44,13 44,35 24,46 4,35 4,13" stroke="#F97316" stroke-width="2.5" fill="rgba(249,115,22,0.12)"/>
+          <path d="M14 17 H34 V22 H20 V25 H30 V29 H20 V32 H34" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="24" cy="24" r="2" fill="#F97316"/>
+        </svg>
+        <div>
+          <p class="eyebrow">EEECi FA'26 • MODULE 06</p>
+          <h1 class="gate-title">CONTROL HUB</h1>
+        </div>
+      </div>
+      <p class="gate-desc">Authenticate the command center to manage the venue network and connected devices.</p>
+      <form id="hubPinForm" class="gate-form">
+        <label for="hubPin" class="form-label">Hub PIN</label>
+        <div class="pin-input-wrap">
+          <svg class="pin-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clip-rule="evenodd"/></svg>
+          <input id="hubPin" class="pin-input" type="password" inputmode="numeric" autocomplete="current-password" placeholder="Enter PIN" required>
+        </div>
+        <button class="btn btn-primary btn-full" type="submit">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="16"><path fill-rule="evenodd" d="M3 10a7 7 0 1114 0 7 7 0 01-14 0zm7-5a1 1 0 100 2 1 1 0 000-2zm-1 4a1 1 0 112 0v3a1 1 0 11-2 0v-3z" clip-rule="evenodd"/></svg>
+          Unlock Hub
+        </button>
+        <p id="hubPinError" class="error"></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════
+       MAIN HUB APPLICATION
+  ═══════════════════════════════════════════════════════════ -->
+  <main id="hubApp" class="hub-app hidden">
+
+    <!-- TOP BAR -->
+    <header class="hub-topbar">
+      <div class="topbar-brand">
+        <svg class="topbar-svg" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <polygon points="24,2 44,13 44,35 24,46 4,35 4,13" stroke="#F97316" stroke-width="2.5" fill="rgba(249,115,22,0.12)"/>
+          <path d="M14 17 H34 V22 H20 V25 H30 V29 H20 V32 H34" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="24" cy="24" r="2" fill="#F97316"/>
+        </svg>
+        <div>
+          <p class="eyebrow">EEECi FA'26 • EEE BRAIN BATTLE</p>
+          <h1 class="topbar-title">CONTROL HUB</h1>
+        </div>
+      </div>
+      <div class="top-actions">
+        <a href="/buzzers" class="btn btn-primary btn-sm" target="_blank">Buzzer &amp; Hardware Manager</a>
+        <div class="latency-badge">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="12"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
+          <span id="hubLatency">-- ms</span>
+        </div>
+        <span id="hubStatus" class="status-pill">CONNECTING</span>
+        <button id="logout" class="btn btn-ghost">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="14"><path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 001 1h8a1 1 0 001-1V4a1 1 0 00-1-1H3zm11.293 4.293a1 1 0 011.414 1.414L14.414 10l1.293 1.293a1 1 0 01-1.414 1.414l-2-2a1 1 0 010-1.414l2-2z" clip-rule="evenodd"/></svg>
+          Lock / Logout
+        </button>
+      </div>
+    </header>
+
+    <!-- READINESS BANNER -->
+    <section id="readinessBanner" class="readiness-banner warning">
+      <span class="banner-dot"></span>
+      <span>CHECKING STAGE READINESS...</span>
+    </section>
+
+    <!-- TELEMETRY STRIP -->
+    <section class="telemetry-strip">
+      <div class="tele-card">
+        <span class="tele-label">SERVER BIND</span>
+        <strong class="tele-value" id="serverAddress">0.0.0.0:8000</strong>
+      </div>
+      <div class="tele-card">
+        <span class="tele-label">UPTIME</span>
+        <strong class="tele-value" id="uptime">--</strong>
+      </div>
+      <div class="tele-card">
+        <span class="tele-label">WEBSOCKETS</span>
+        <strong class="tele-value accent" id="deviceCount">0</strong>
+      </div>
+      <div class="tele-card">
+        <span class="tele-label">ACTIVE MATCH</span>
+        <strong class="tele-value small" id="activeMatch">--</strong>
+      </div>
+      <div class="tele-card">
+        <span class="tele-label">ROUND PHASE</span>
+        <strong class="tele-value" id="roundPhase">--</strong>
+      </div>
+      <div class="tele-card">
+        <span class="tele-label">BUZZERS</span>
+        <strong class="tele-value" id="buzzerLock">--</strong>
+      </div>
+      <div class="tele-card">
+        <span class="tele-label">STATE.JSON</span>
+        <strong class="tele-value ok" id="persistenceStatus">SAVED</strong>
+        <small class="tele-sub" id="persistenceTime"></small>
+      </div>
+    </section>
+
+    <!-- QUICK LAUNCH BAR -->
+    <nav class="quick-launch">
+      <span class="ql-label">QUICK LAUNCH</span>
+      <div class="ql-links">
+        <a class="ql-link" data-launch="/display">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="14"><path fill-rule="evenodd" d="M3 5a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2h-2.22l.123.489.804.804A1 1 0 0113 18H7a1 1 0 01-.707-1.707l.804-.804L7.22 15H5a2 2 0 01-2-2V5zm5.771 7H5V5h10v7H8.771z" clip-rule="evenodd"/></svg>
+          Projector
+        </a>
+        <a class="ql-link" data-launch="/moderator">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="14"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+          Moderator
+        </a>
+        <a class="ql-link" data-launch="/admin">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="14"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
+          Admin
+        </a>
+        <a class="ql-link" data-launch="/buzzers">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="14"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
+          Buzzer Manager
+        </a>
+        <a class="ql-link ql-buzzer-a" data-launch="/buzzer/a?pairing=BUZZ_A">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="14"><path fill-rule="evenodd" d="M5 2a1 1 0 011 1v1h1a1 1 0 010 2H6v1a1 1 0 01-2 0V6H3a1 1 0 010-2h1V3a1 1 0 011-1zm0 10a1 1 0 011 1v1h1a1 1 0 110 2H6v1a1 1 0 11-2 0v-1H3a1 1 0 110-2h1v-1a1 1 0 011-1zM12 2a1 1 0 01.967.744L14.146 7.2 17.5 9.134a1 1 0 010 1.732l-3.354 1.935-1.18 4.455a1 1 0 01-1.933 0L9.854 12.8 6.5 10.866a1 1 0 010-1.732l3.354-1.935 1.18-4.455A1 1 0 0112 2z" clip-rule="evenodd"/></svg>
+          Buzzer A
+        </a>
+        <a class="ql-link ql-buzzer-b" data-launch="/buzzer/b?pairing=BUZZ_B">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="14"><path fill-rule="evenodd" d="M5 2a1 1 0 011 1v1h1a1 1 0 010 2H6v1a1 1 0 01-2 0V6H3a1 1 0 010-2h1V3a1 1 0 011-1zm0 10a1 1 0 011 1v1h1a1 1 0 110 2H6v1a1 1 0 11-2 0v-1H3a1 1 0 110-2h1v-1a1 1 0 011-1zM12 2a1 1 0 01.967.744L14.146 7.2 17.5 9.134a1 1 0 010 1.732l-3.354 1.935-1.18 4.455a1 1 0 01-1.933 0L9.854 12.8 6.5 10.866a1 1 0 010-1.732l3.354-1.935 1.18-4.455A1 1 0 0112 2z" clip-rule="evenodd"/></svg>
+          Buzzer B
+        </a>
+        <a class="ql-link ql-debug" data-launch="/debug">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="14"><path fill-rule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+          Debug
+        </a>
+      </div>
+    </nav>
+
+    <!-- MAIN GRID ROW 1: Network + Overrides -->
+    <div class="hub-row">
+
+      <!-- Network & Readiness -->
+      <div class="hub-panel">
+        <div class="panel-header">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="18"><path fill-rule="evenodd" d="M17.778 8.222c-4.296-4.296-11.26-4.296-15.556 0A1 1 0 00.808 9.636c3.515-3.515 9.209-3.515 12.728 0 .049.049.095.1.14.153l-1.886 1.886a7 7 0 00-9.9 0 1 1 0 01-1.414-1.414 9 9 0 0112.728 0l.002.002 1.413-1.413-.001-.001a1 1 0 010-1.415.996.996 0 011.16-.212zM10 15a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>
+          <h2>Network &amp; Readiness</h2>
+        </div>
+
+        <label class="form-label" for="ipSelector">Active Network IP</label>
+        <select id="ipSelector" class="hub-select"></select>
+        <p id="networkSummary" class="text-muted small-text">Detecting interfaces...</p>
+
+        <div id="readiness" class="checklist"></div>
+      </div>
+
+      <!-- Master Overrides -->
+      <div class="hub-panel">
+        <div class="panel-header">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="18"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+          <h2>Master Overrides</h2>
+        </div>
+
+        <div class="override-grid">
+          <button id="lockBuzzers" class="btn btn-danger">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="14"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg>
+            Force Lock All
+          </button>
+          <button id="unlockBuzzers" class="btn btn-success">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="14"><path d="M10 2a5 5 0 00-5 5v2a2 2 0 00-2 2v5a2 2 0 002 2h10a2 2 0 002-2v-5a2 2 0 00-2-2H7V7a3 3 0 015.905-.75 1 1 0 001.937-.5A5.002 5.002 0 0010 2z"/></svg>
+            Force Unlock All
+          </button>
+          <button id="clearBuzz" class="btn btn-outline">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="14"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+            Clear Active Buzz
+          </button>
+          <button id="resetRound" class="btn btn-danger">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="14"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/></svg>
+            Emergency Reset Round
+          </button>
+        </div>
+
+        <label class="toggle-label">
+          <span class="toggle-track">
+            <input id="testMode" type="checkbox">
+            <span class="toggle-knob"></span>
+          </span>
+          <span class="toggle-text">Buzzer Test Mode <em>(no scoring)</em></span>
+        </label>
+
+        <p id="overrideStatus" class="status-note"></p>
+      </div>
+
+    </div>
+
+    <div class="hub-panel full-width esp-card">
+      <div class="panel-header">
+        <h2>ESP32 Breadboard Hardware Buzzer</h2>
+        <strong id="esp32Status" class="esp-status offline">OFFLINE • 192.168.137.x</strong>
+      </div>
+      <p class="text-muted small-text">Live hardware buzzer on the venue hotspot. Spoken-only stage — this card never shows question text.</p>
+      <div class="esp-actions">
+        <button id="esp32Test" class="btn btn-primary" type="button">Test ESP32 Hardware</button>
+        <button id="esp32Reset" class="btn btn-danger" type="button">Send ESP32 RESET</button>
+      </div>
+      <label class="toggle-label" for="stageLockToggle">
+        <span class="toggle-track">
+          <input id="stageLockToggle" type="checkbox">
+          <span class="toggle-knob"></span>
+        </span>
+        <span class="toggle-text">Lock Authorized Stage Devices <em id="stageLockState">OPEN</em></span>
+      </label>
+    </div>
+
+    <!-- QR CODES -->
+    <div class="hub-panel full-width">
+      <div class="panel-header">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="18"><path fill-rule="evenodd" d="M3 4a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm2 2V5h1v1H5zM3 13a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3zm2 2v-1h1v1H5zM13 3a1 1 0 00-1 1v3a1 1 0 001 1h3a1 1 0 001-1V4a1 1 0 00-1-1h-3zm1 2v1h1V5h-1z" clip-rule="evenodd"/><path d="M11 4a1 1 0 10-2 0v1a1 1 0 002 0V4zM10 7a1 1 0 011 1v1h2a1 1 0 110 2h-3a1 1 0 01-1-1V8a1 1 0 011-1zM16 9a1 1 0 100 2 1 1 0 000-2zM9 13a1 1 0 011-1h1a1 1 0 110 2v2a1 1 0 11-2 0v-3zM7 11a1 1 0 100-2H4a1 1 0 100 2h3zM17 13a1 1 0 01-1 1h-2a1 1 0 110-2h2a1 1 0 011 1zM16 17a1 1 0 100-2h-3a1 1 0 100 2h3z"/></svg>
+        <h2>Offline Role Links &amp; QR Codes</h2>
+      </div>
+      <div id="qrCards" class="qr-grid"></div>
+    </div>
+
+    <!-- DEVICE MANAGER -->
+    <div class="hub-panel full-width">
+      <div class="panel-header">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="18"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z"/></svg>
+        <h2>Live Device Manager</h2>
+        <div class="panel-header-actions">
+          <button id="swapBuzzers" class="btn btn-primary btn-sm">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="13"><path d="M8 5a1 1 0 100 2h5.586l-1.293 1.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L13.586 5H8zM12 15a1 1 0 100-2H6.414l1.293-1.293a1 1 0 10-1.414-1.414l-3 3a1 1 0 000 1.414l3 3a1 1 0 001.414-1.414L6.414 15H12z"/></svg>
+            Swap Buzzer A ↔ B
+          </button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="hub-table">
+          <thead>
+            <tr>
+              <th>Device</th>
+              <th>IP</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th>Latency</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="devices"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ROW 2: Diagnostics + State Recovery -->
+    <div class="hub-row">
+
+      <!-- Buzzer Diagnostics -->
+      <div class="hub-panel">
+        <div class="panel-header">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="18"><path fill-rule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+          <h2>Buzzer Diagnostics</h2>
+        </div>
+
+        <div class="diag-grid">
+          <button id="testBuzz" class="btn btn-primary">Test Buzz All</button>
+          <button id="testBuzzA" class="btn btn-outline buzzer-a-btn">Test Buzz A</button>
+          <button id="testBuzzB" class="btn btn-outline buzzer-b-btn">Test Buzz B</button>
+          <button id="runDiagnostic" class="btn btn-primary full-col">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="14"><path fill-rule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11 4a1 1 0 10-2 0v4a1 1 0 102 0V7zm-3 1a1 1 0 10-2 0v3a1 1 0 102 0V8zM8 9a1 1 0 00-2 0v2a1 1 0 102 0V9z" clip-rule="evenodd"/></svg>
+            Run Full Stage Diagnostic
+          </button>
+        </div>
+
+        <p id="diagnosticStatus" class="status-note">No test pulse sent.</p>
+
+        <div id="fairness" class="fairness-card">
+          <span class="fairness-label">FIRST-PRESS TELEMETRY</span>
+          <span class="fairness-value">Waiting for buzz data...</span>
+        </div>
+      </div>
+
+      <!-- State Recovery -->
+      <div class="hub-panel">
+        <div class="panel-header">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="18"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+          <h2>State Recovery</h2>
+        </div>
+
+        <div class="recovery-grid">
+          <button id="backup" class="btn btn-primary">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="13"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+            Download state.json
+          </button>
+          <button id="rollback" class="btn btn-danger">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="13"><path fill-rule="evenodd" d="M9.707 14.707a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 1.414L7.414 9H15a2 2 0 012 2 2 2 0 01-2 2H7.414l2.293 2.293a1 1 0 010 1.414z" clip-rule="evenodd"/></svg>
+            Quick Rollback (1-min)
+          </button>
+        </div>
+
+        <div class="file-restore-wrap">
+          <label class="form-label">Restore from File</label>
+          <input id="restoreFile" class="file-input" type="file" accept="application/json">
+          <button id="restore" class="btn btn-outline btn-full">Restore Selected File</button>
+        </div>
+
+        <p id="restoreStatus" class="status-note"></p>
+      </div>
+
+    </div>
+
+    <!-- LIVE EVENT STREAM -->
+    <div class="hub-panel full-width">
+      <div class="panel-header">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="18"><path fill-rule="evenodd" d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm3.293 1.293a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 01-1.414-1.414L7.586 10 5.293 7.707a1 1 0 010-1.414zM11 12a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd"/></svg>
+        <h2>Live Event Stream</h2>
+        <div class="panel-header-actions stream-controls">
+          <button class="btn btn-sm btn-filter log-filter active" data-filter="all">All</button>
+          <button class="btn btn-sm btn-filter log-filter" data-filter="connections">Connections</button>
+          <button class="btn btn-sm btn-filter log-filter" data-filter="buzzers">Buzzers</button>
+          <button class="btn btn-sm btn-filter log-filter" data-filter="scores">Scores &amp; Admin</button>
+          <button id="clearAudit" class="btn btn-sm btn-ghost">Clear</button>
+          <label class="toggle-label compact">
+            <span class="toggle-track small">
+              <input id="soundAlerts" type="checkbox">
+              <span class="toggle-knob"></span>
+            </span>
+            <span class="toggle-text">Sound Alerts</span>
+          </label>
+        </div>
+      </div>
+      <pre id="auditStream" class="audit-stream">Waiting for events...</pre>
+    </div>
+
+  </main>
+
+  <script src="/static/client.js"></script>
+  <script src="/static/hub.js"></script>
+</body>
+</html>

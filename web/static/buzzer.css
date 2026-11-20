@@ -1,0 +1,741 @@
+/**
+ * EEECi FA'26 — EEE Brain Battle (Module 06)
+ * Buzzer Interface CSS — Mobile Competition Design
+ * 100% Offline, Zero CDNs, GPU-Accelerated, Zero-Scroll Mobile Viewport
+ */
+
+/* ═══════════════════════════════════════════════════════════════
+   A. DESIGN TOKENS & SYSTEM BASE
+═══════════════════════════════════════════════════════════════ */
+:root {
+  --team-accent:    #0ea5e9;
+  --bg-deep:        #04070d;
+  --bg-surface:     rgba(13, 19, 31, 0.92);
+  --bg-card:        rgba(19, 28, 45, 0.82);
+  --border-subtle:  rgba(148, 163, 184, 0.18);
+  --border-focus:   rgba(249, 115, 22, 0.45);
+
+  /* Colors */
+  --orange:         #f97316;
+  --orange-glow:    rgba(249, 115, 22, 0.4);
+  --amber:          #fb923c;
+  --gold:           #facc15;
+  --emerald:        #10b981;
+  --emerald-glow:   rgba(16, 185, 129, 0.45);
+  --crimson:        #ef4444;
+  --crimson-glow:   rgba(239, 68, 68, 0.45);
+  --cyan:           #22d3ee;
+
+  /* Typography */
+  --txt:            #f8fafc;
+  --txt-muted:      #94a3b8;
+  --txt-dim:        #64748b;
+  --font-sans:      system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono:      ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+
+  /* Radii */
+  --r-sm: 8px;
+  --r-md: 14px;
+  --r-lg: 22px;
+  --r-pill: 999px;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: var(--bg-deep);
+  color: var(--txt);
+  font-family: var(--font-sans);
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  display: flex;
+  background:
+    radial-gradient(circle at 50% 18%, color-mix(in srgb, var(--team-accent) 14%, transparent), transparent 32rem),
+    radial-gradient(ellipse 100% 80% at 50% 100%, #060a14 0%, var(--bg-deep) 100%);
+  transition: background 240ms ease;
+}
+
+.hidden { display: none !important; }
+
+/* ═══════════════════════════════════════════════════════════════
+   B. PAIRING GATE SCREEN
+═══════════════════════════════════════════════════════════════ */
+.pairing-gate {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  background: radial-gradient(ellipse 120% 90% at 50% -10%, #132238 0%, var(--bg-deep) 75%);
+  overflow-y: auto;
+}
+
+.pairing-card {
+  width: 100%;
+  max-width: 420px;
+  padding: clamp(1.6rem, 5vw, 2.4rem);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55), 0 0 40px rgba(249, 115, 22, 0.08);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.brand-header {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  margin-bottom: 1.1rem;
+}
+
+.brand-emblem {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 8px var(--orange-glow));
+}
+
+.brand {
+  color: var(--orange);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.pairing-title {
+  color: var(--txt);
+  font-size: clamp(1.4rem, 5vw, 1.9rem);
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  margin-top: 0.15rem;
+}
+
+.pairing-instruction {
+  color: var(--txt-muted);
+  font-size: 0.86rem;
+  line-height: 1.5;
+  margin-bottom: 1.4rem;
+}
+
+.pairing-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.pairing-label {
+  color: #cbd5e1;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.input-wrap {
+  position: relative;
+}
+
+.pairing-input {
+  width: 100%;
+  padding: 0.85rem 1rem;
+  background: rgba(4, 7, 13, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: var(--r-sm);
+  color: var(--txt);
+  font-family: var(--font-mono);
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  outline: none;
+  text-align: center;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.pairing-input:focus {
+  border-color: var(--orange);
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.2);
+}
+
+.pairing-btn {
+  width: 100%;
+  padding: 0.9rem;
+  border: 1px solid var(--orange);
+  border-radius: var(--r-sm);
+  background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 0.92rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(234, 88, 12, 0.35);
+  transition: filter 0.15s, transform 0.08s;
+}
+
+.pairing-btn:active {
+  transform: scale(0.98);
+  filter: brightness(0.92);
+}
+
+.pairing-error {
+  min-height: 1.2rem;
+  color: var(--crimson);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   C. MAIN BUZZER SHELL
+═══════════════════════════════════════════════════════════════ */
+.buzzer-shell {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+  padding:
+    max(0.65rem, env(safe-area-inset-top))
+    max(0.75rem, env(safe-area-inset-right))
+    max(0.55rem, env(safe-area-inset-bottom))
+    max(0.75rem, env(safe-area-inset-left));
+  gap: 0.5rem;
+}
+
+/* ── Top Header / Telemetry Card ───────────────────────────── */
+.buzzer-top {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.75rem 0.95rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+  flex-shrink: 0;
+}
+
+.top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.identity {
+  min-width: 0;
+  flex: 1;
+}
+
+.brand-tag {
+  color: var(--orange);
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.role-label {
+  color: var(--team-accent);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  margin-top: 0.1rem;
+}
+
+#teamName {
+  color: var(--txt);
+  font-size: clamp(1.2rem, 5.2vw, 1.85rem);
+  font-weight: 950;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 0.1rem;
+}
+
+#speakerName {
+  color: var(--txt-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 0.2rem;
+}
+
+/* ── Score Badge inside Header ─────────────────────────────── */
+.score-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0.35rem 0.75rem;
+  background: rgba(4, 8, 16, 0.65);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: var(--r-sm);
+  flex-shrink: 0;
+  min-width: 72px;
+}
+
+.score-label {
+  font-size: 0.54rem;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  color: var(--txt-dim);
+  text-transform: uppercase;
+}
+
+.score {
+  color: var(--team-accent);
+  font-family: var(--font-mono);
+  font-size: clamp(1.5rem, 6.5vw, 2.2rem);
+  font-weight: 950;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 16px color-mix(in srgb, var(--team-accent) 45%, transparent);
+}
+
+/* ── Telemetry Bar ─────────────────────────────────────────── */
+.telemetry-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+  font-size: 0.64rem;
+  white-space: nowrap;
+}
+
+.telemetry-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.connection {
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--r-pill);
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid currentColor;
+}
+.connection.online { color: #86efac; }
+.connection.reconnecting { color: #fde68a; animation: pulse-opacity 1s infinite; }
+.connection.offline { color: #fca5a5; }
+
+.latency {
+  font-family: var(--font-mono);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.latency.good { color: #86efac; }
+.latency.warn { color: #fbbf24; }
+.latency.bad { color: #f87171; animation: pulse-opacity 0.8s infinite; }
+
+.wake-badge {
+  color: var(--txt-dim);
+  font-size: 0.58rem;
+  font-weight: 700;
+}
+.wake-badge.active { color: #86efac; }
+.wake-badge.warning { color: #fbbf24; }
+
+.sound-toggle {
+  padding: 0.2rem 0.55rem;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: var(--r-pill);
+  background: rgba(0, 0, 0, 0.3);
+  color: #cbd5e1;
+  font-family: inherit;
+  font-size: 0.58rem;
+  font-weight: 900;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.sound-toggle:active {
+  border-color: var(--orange);
+  color: var(--orange);
+}
+
+/* ── Live Feedback Notice ──────────────────────────────────── */
+.feedback {
+  min-height: 1.25rem;
+  color: #fde68a;
+  font-size: clamp(0.72rem, 3.2vw, 0.95rem);
+  font-weight: 900;
+  text-align: center;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   D. CENTERPIECE BUZZER BUTTON
+═══════════════════════════════════════════════════════════════ */
+.buzzer-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.buzz-button {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  width: 100%;
+  height: 100%;
+  max-width: 540px;
+  max-height: 100%;
+  padding: 1.2rem;
+  border-radius: var(--r-lg);
+  border: 3px solid #2a374a;
+  background: #0f1724;
+  color: #64748b;
+  box-shadow:
+    inset 0 2px 2px rgba(255, 255, 255, 0.08),
+    0 12px 30px rgba(0, 0, 0, 0.45);
+  outline: none;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  text-align: center;
+  transition:
+    transform 0.06s ease,
+    background 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    color 0.18s ease;
+}
+
+.buzz-button:disabled {
+  cursor: not-allowed;
+}
+
+.buzz-button strong {
+  display: block;
+  font-size: clamp(2rem, 9.5vw, 4.2rem);
+  font-weight: 950;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+#buttonSubtitle {
+  display: block;
+  max-width: 90%;
+  font-size: clamp(0.68rem, 3vw, 0.95rem);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.88;
+  line-height: 1.3;
+}
+
+/* ── Interactive Physical Depression ───────────────────────── */
+.buzz-button:active:not(:disabled) {
+  transform: scale(0.965) translateY(3px);
+  filter: brightness(0.95);
+}
+
+/* ── State: STANDBY (ESP32 Hardware Primary Active) ─────── */
+.buzz-button.standby {
+  border-color: rgba(249, 115, 22, 0.35);
+  background: radial-gradient(circle at center, #111827 0%, #05070b 100%);
+  color: #94a3b8;
+  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.8), 0 0 15px rgba(249, 115, 22, 0.12);
+}
+.buzz-button.standby strong {
+  color: #f97316;
+  font-size: clamp(1.4rem, 6vw, 2.6rem);
+}
+.buzz-button.standby small {
+  color: #cbd5e1;
+}
+
+/* ── State: LOCKED ─────────────────────────────────────────── */
+.buzz-button.locked {
+  border-color: #1e293b;
+  background: #0b111c;
+  color: #475569;
+}
+
+/* ── State: READY (Smash Target) ───────────────────────────── */
+.buzz-button.ready {
+  border-color: #fed7aa;
+  background: linear-gradient(145deg, #f97316 0%, #ea580c 55%, #c2410c 100%);
+  color: #ffffff;
+  box-shadow:
+    inset 0 3px 2px rgba(255, 255, 255, 0.35),
+    0 0 0 4px rgba(249, 115, 22, 0.22),
+    0 16px 40px rgba(234, 88, 12, 0.45);
+  animation: ready-pulse 1.2s ease-in-out infinite;
+}
+
+.buzz-button.ready strong {
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+/* ── State: PENDING (Buzz Recorded, Waiting for Ack) ───────── */
+.buzz-button.pending {
+  border-color: #fef08a;
+  background: linear-gradient(145deg, #eab308 0%, #ca8a04 100%);
+  color: #ffffff;
+  box-shadow:
+    inset 0 2px 2px rgba(255, 255, 255, 0.25),
+    0 0 30px rgba(234, 179, 8, 0.45);
+}
+
+/* ── State: WINNER (First Buzz Triumph) ────────────────────── */
+.buzz-button.winner {
+  border-color: #a7f3d0;
+  background: linear-gradient(145deg, #10b981 0%, #059669 60%, #047857 100%);
+  color: #ffffff;
+  box-shadow:
+    inset 0 3px 2px rgba(255, 255, 255, 0.35),
+    0 0 0 5px rgba(16, 185, 129, 0.25),
+    0 16px 44px rgba(5, 150, 105, 0.5);
+  animation: winner-pulse 1.4s ease-in-out infinite;
+}
+
+/* ── State: OPPONENT (Opponent Got It First) ───────────────── */
+.buzz-button.opponent {
+  border-color: #fca5a5;
+  background: linear-gradient(145deg, #ef4444 0%, #b91c1c 70%, #7f1d1d 100%);
+  color: #ffffff;
+  box-shadow:
+    inset 0 2px 2px rgba(255, 255, 255, 0.2),
+    0 10px 30px rgba(185, 28, 28, 0.35);
+}
+
+/* ── State: PASSED (Question Passed Over) ───────────────────── */
+.buzz-button.passed {
+  border-color: #f87171;
+  background: linear-gradient(145deg, #dc2626 0%, #991b1b 100%);
+  color: #ffffff;
+  box-shadow:
+    inset 0 2px 2px rgba(255, 255, 255, 0.2),
+    0 10px 28px rgba(153, 27, 27, 0.35);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   E. AMBIENT BACKGROUNDS BY STATE
+═══════════════════════════════════════════════════════════════ */
+body.state-ready {
+  background:
+    radial-gradient(circle at 50% 25%, rgba(249, 115, 22, 0.2), transparent 30rem),
+    radial-gradient(ellipse 100% 80% at 50% 100%, #150903 0%, var(--bg-deep) 100%);
+}
+
+body.state-pending {
+  background:
+    radial-gradient(circle at 50% 25%, rgba(234, 179, 8, 0.2), transparent 30rem),
+    radial-gradient(ellipse 100% 80% at 50% 100%, #171103 0%, var(--bg-deep) 100%);
+}
+
+body.state-winner {
+  background:
+    radial-gradient(circle at 50% 25%, rgba(16, 185, 129, 0.24), transparent 30rem),
+    radial-gradient(ellipse 100% 80% at 50% 100%, #031710 0%, var(--bg-deep) 100%);
+}
+
+body.state-opponent,
+body.state-passed {
+  background:
+    radial-gradient(circle at 50% 25%, rgba(239, 68, 68, 0.2), transparent 30rem),
+    radial-gradient(ellipse 100% 80% at 50% 100%, #170303 0%, var(--bg-deep) 100%);
+}
+
+body.test-pulse {
+  background:
+    radial-gradient(circle at 50% 50%, rgba(34, 211, 238, 0.35), transparent 32rem),
+    radial-gradient(ellipse 100% 80% at 50% 100%, #03141f 0%, var(--bg-deep) 100%) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   F. FOOTER STATUS
+═══════════════════════════════════════════════════════════════ */
+.buzzer-footer {
+  flex-shrink: 0;
+  text-align: center;
+  color: var(--txt-dim);
+  font-size: 0.62rem;
+  line-height: 1.4;
+  padding: 0.2rem 0;
+}
+
+.buzzer-footer p {
+  margin: 0.1rem 0;
+}
+
+#fairnessLine {
+  color: rgba(148, 163, 184, 0.45);
+  font-size: 0.54rem;
+  letter-spacing: 0.12em;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   G. ANIMATIONS
+═══════════════════════════════════════════════════════════════ */
+@keyframes ready-pulse {
+  0%, 100% {
+    box-shadow:
+      inset 0 3px 2px rgba(255, 255, 255, 0.35),
+      0 0 0 4px rgba(249, 115, 22, 0.2),
+      0 16px 40px rgba(234, 88, 12, 0.45);
+    filter: brightness(1);
+  }
+  50% {
+    box-shadow:
+      inset 0 3px 2px rgba(255, 255, 255, 0.45),
+      0 0 0 8px rgba(249, 115, 22, 0.3),
+      0 20px 48px rgba(234, 88, 12, 0.6);
+    filter: brightness(1.08);
+  }
+}
+
+@keyframes winner-pulse {
+  0%, 100% {
+    box-shadow:
+      inset 0 3px 2px rgba(255, 255, 255, 0.35),
+      0 0 0 5px rgba(16, 185, 129, 0.25),
+      0 16px 44px rgba(5, 150, 105, 0.5);
+  }
+  50% {
+    box-shadow:
+      inset 0 3px 2px rgba(255, 255, 255, 0.45),
+      0 0 0 10px rgba(16, 185, 129, 0.35),
+      0 22px 52px rgba(5, 150, 105, 0.7);
+  }
+}
+
+@keyframes pulse-opacity {
+  50% { opacity: 0.45; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   H. RESPONSIVE BREAKPOINTS (Landscape & Small Screen Support)
+═══════════════════════════════════════════════════════════════ */
+
+/* Landscape mode on phones (height <= 520px) — 2-column competition layout! */
+@media (orientation: landscape) and (max-height: 520px) {
+  .buzzer-shell {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    grid-template-rows: 1fr auto;
+    gap: 0.6rem;
+    padding:
+      max(0.4rem, env(safe-area-inset-top))
+      max(0.7rem, env(safe-area-inset-right))
+      max(0.4rem, env(safe-area-inset-bottom))
+      max(0.7rem, env(safe-area-inset-left));
+  }
+
+  .buzzer-top {
+    grid-column: 1;
+    grid-row: 1;
+    height: 100%;
+    justify-content: space-between;
+    padding: 0.65rem 0.8rem;
+  }
+
+  .top-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.4rem;
+  }
+
+  .score-card {
+    align-self: stretch;
+    align-items: center;
+    padding: 0.3rem 0.5rem;
+  }
+
+  .feedback {
+    display: none; /* Keep clean in landscape */
+  }
+
+  .buzzer-main {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    height: 100%;
+  }
+
+  .buzz-button {
+    max-width: none;
+    height: 100%;
+    padding: 0.8rem;
+  }
+
+  .buzz-button strong {
+    font-size: clamp(2rem, 7vw, 3.6rem);
+  }
+
+  .buzzer-footer {
+    grid-column: 1;
+    grid-row: 2;
+    padding: 0;
+  }
+}
+
+/* Very compact portrait phones (height < 650px) */
+@media (max-height: 650px) and (orientation: portrait) {
+  .buzzer-top {
+    padding: 0.55rem 0.75rem;
+    gap: 0.3rem;
+  }
+
+  #teamName {
+    font-size: 1.25rem;
+  }
+
+  .score {
+    font-size: 1.5rem;
+  }
+
+  .telemetry-bar {
+    padding-top: 0.25rem;
+  }
+
+  .buzz-button {
+    padding: 0.85rem;
+  }
+
+  .buzz-button strong {
+    font-size: clamp(1.8rem, 8vw, 3.2rem);
+  }
+}

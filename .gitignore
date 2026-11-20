@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.log
+data/state.json
+data/audit.log
+data/backups/
+logs/
