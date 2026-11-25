@@ -85,10 +85,7 @@
     }
     card.classList.remove('hidden');
     var mn = String(live.match_number || 1).padStart(2, '0');
-    var cm = (state && state.current_match) || {};
-    var rfA = cm.rf_score_a || 0, rfB = cm.rf_score_b || 0;
-    var bzA = cm.bz_score_a || 0, bzB = cm.bz_score_b || 0;
-    setText('liveMatchLabel', 'MATCH ' + mn + ' \u2022 RF ' + rfA + '\u2013' + rfB + ' \u2022 BZ ' + bzA + '\u2013' + bzB);
+    setText('liveMatchLabel', 'MATCH ' + mn);
     setText('liveTeamA', live.team_a_name || 'Team A');
     setText('liveTeamB', live.team_b_name || 'Team B');
     setText('liveScoreA', String(live.score_a || 0));
@@ -331,7 +328,7 @@
         html += '</div>';
         html += '<div class="res-mc-score-wrap">';
         html += '<div class="res-mc-score">' + (cr.score_a || 0) + '–' + (cr.score_b || 0) + '</div>';
-        html += '<div class="res-mc-stage-badge">' + escHTML((cr.stage || '').replace(/_/g, ' ')) + ' \u2022 RF ' + (cr.rf_score_a || 0) + '-' + (cr.rf_score_b || 0) + ' | BZ ' + (cr.bz_score_a || 0) + '-' + (cr.bz_score_b || 0) + '</div>';
+        html += '<div class="res-mc-stage-badge">' + escHTML((cr.stage || '').replace(/_/g, ' ')) + '</div>';
         html += '</div>';
         html += '</div>';
       } else if (isLive) {

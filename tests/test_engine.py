@@ -423,3 +423,56 @@ def test_question_tracking_no_repeats_and_warning(clean_engine: GameEngine):
     # Attempting to open 6th question must raise ValueError (NEVER wraps around!)
     with pytest.raises(ValueError, match="Question bank exhausted"):
         engine.open_question()
+
+
+def test_rapid_fire_five_hits_each_exact_fifty(clean_engine: GameEngine):
+    engine = clean_engine
+    team_a = "team_1"
+    team_b = "team_2"
+
+    engine.start_rapid_fire(team_a, duration_seconds=120)
+    for _ in range(5):
+        engine.open_question()
+        result = engine.mark_correct(team_a)
+        assert result["points_awarded"] == 10
+
+    engine.start_rapid_fire(team_b, duration_seconds=120)
+    for _ in range(5):
+        engine.open_question()
+        result = engine.mark_correct(team_b)
+        assert result["points_awarded"] == 10
+
+    assert engine.current_match.scores[team_a] == 50
+    assert engine.current_match.scores[team_b] == 50
+    assert engine.question_matrix.team_a_correct == 5
+    assert engine.question_matrix.team_b_correct == 5
+
+
+def test_score_action_duplicate_within_150ms_is_ignored(clean_engine: GameEngine):
+    engine = clean_engine
+    engine.start_rapid_fire("team_1", duration_seconds=120)
+    engine.open_question()
+
+    first = engine.mark_correct("team_1")
+    duplicate = engine.mark_correct("team_1")
+
+    assert first["points_awarded"] == 10
+    assert duplicate["duplicate"] is True
+    assert engine.current_match.scores["team_1"] == 10
+
+
+def test_setup_match_zeroes_stale_scores_hits_and_streak(clean_engine: GameEngine):
+    engine = clean_engine
+    engine.admin_adjust_score("team_1", 70, "stale score")
+    engine.start_rapid_fire("team_1", duration_seconds=120)
+    engine.open_question()
+    engine.mark_correct("team_1")
+    assert engine.current_match.scores["team_1"] == 80
+    assert engine.question_matrix.team_a_correct == 1
+
+    engine.setup_match(Stage.QUALIFIER.value, 1, "team_1", "team_2")
+
+    assert engine.current_match.scores == {"team_1": 0, "team_2": 0}
+    assert engine.question_matrix.team_a_correct == 0
+    assert engine.question_matrix.team_b_correct == 0
+    assert engine.telemetry()["current_streak"] == 0

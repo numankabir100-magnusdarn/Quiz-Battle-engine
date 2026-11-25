@@ -56,6 +56,7 @@ ADMIN_ACTIONS: Set[str] = MODERATOR_ACTIONS | {
     "override_quarterfinal_pairings",
     "admin_update_team",
     "set_buzzer_source_mode",
+    "advance_winner",
 }
 HUB_ACTIONS: Set[str] = {
     "toggle_stage_lock",

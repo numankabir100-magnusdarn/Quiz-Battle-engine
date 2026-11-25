@@ -1,44 +1,46 @@
 /**
  * buzzer_sfx.js — EEECi FA'26 EEE Brain Battle
- * Realistic game-show electromechanical relay buzzer synthesis.
- * 100% offline — pure Web Audio API, zero external files.
+ * Authentic 60Hz electromagnetic coil game-show buzzer ("BZZZZT!")
+ * 100% offline — pure Web Audio API synthesis, zero external files.
  * Exposed as window.QuizBuzzerSFX
  */
 (function (global) {
   'use strict';
 
-  /* ── Storage key ─────────────────────────────────────────── */
   var MUTE_KEY = 'eeeci_sfx_muted';
-
-  /* ── AudioContext singleton ──────────────────────────────── */
   var _ctx = null;
+  var _shaperCurve = null;
 
-  function _ensureCtx() {
-    if (_ctx) {
-      if (_ctx.state === 'suspended') _ctx.resume();
-      return _ctx;
+  function _getCtx() {
+    if (!_ctx) {
+      var AC = global.AudioContext || global.webkitAudioContext;
+      if (!AC) return null;
+      _ctx = new AC();
     }
-    var AC = global.AudioContext || global.webkitAudioContext;
-    if (!AC) return null;
-    _ctx = new AC();
     return _ctx;
   }
 
-  /* ── Browser audio-unlock (mobile Chrome/Safari) ─────────── */
-  function _unlockOnGesture() {
-    var events = ['pointerdown', 'touchstart', 'keydown'];
-    function unlock() {
-      _ensureCtx();
-      events.forEach(function (ev) {
-        document.removeEventListener(ev, unlock, true);
-      });
+  function _resumeCtx() {
+    var ctx = _getCtx();
+    if (!ctx) return Promise.resolve(null);
+    if (ctx.state === 'suspended') {
+      return ctx.resume().then(function () { return ctx; }).catch(function () { return ctx; });
     }
-    events.forEach(function (ev) {
-      document.addEventListener(ev, unlock, { capture: true, passive: true });
-    });
+    return Promise.resolve(ctx);
   }
 
-  /* ── Mute state ───────────────────────────────────────────── */
+  /* ── Bulletproof Desktop & Mobile AudioContext Unlock ─────── */
+  function _attachUnlockListeners() {
+    var events = ['pointerdown', 'mousedown', 'touchstart', 'click', 'keydown'];
+    function handleGesture() {
+      _resumeCtx();
+    }
+    for (var i = 0; i < events.length; i++) {
+      document.addEventListener(events[i], handleGesture, { capture: true, passive: true });
+    }
+  }
+
+  /* ── Mute state (localStorage: eeeci_sfx_muted) ──────────── */
   function _loadMuted() {
     try {
       return localStorage.getItem(MUTE_KEY) === 'true';
@@ -55,30 +57,35 @@
 
   var _muted = _loadMuted();
 
-  /* ── Low-level helpers ───────────────────────────────────── */
+  /* ── Soft-clipping WaveShaper curve ──────────────────────── */
+  function _getSoftClipCurve() {
+    if (_shaperCurve) return _shaperCurve;
+    var n = 1024;
+    var curve = new Float32Array(n);
+    var drive = 3.2;
+    for (var i = 0; i < n; i++) {
+      var x = (i * 2) / n - 1;
+      curve[i] = Math.tanh(drive * x);
+    }
+    _shaperCurve = curve;
+    return curve;
+  }
 
-  /**
-   * Filtered white-noise burst — simulates relay/solenoid click transient.
-   * @param {AudioContext} ctx
-   * @param {number} durationSec
-   * @param {number} freqHz   bandpass centre
-   * @param {number} gain     peak gain
-   */
-  function _noiseClick(ctx, durationSec, freqHz, gain) {
-    var bufSize = Math.ceil(ctx.sampleRate * durationSec);
+  /* ── Solenoid click transient ────────────────────────────── */
+  function _noiseClick(ctx, dest, durationSec, freqHz, gain) {
+    var bufSize = Math.max(1, Math.ceil(ctx.sampleRate * durationSec));
     var buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
     var data = buf.getChannelData(0);
     for (var i = 0; i < bufSize; i++) {
-      data[i] = (Math.random() * 2 - 1);
+      data[i] = Math.random() * 2 - 1;
     }
     var src = ctx.createBufferSource();
     src.buffer = buf;
 
-    // Bandpass around the mechanical click frequency
     var bp = ctx.createBiquadFilter();
     bp.type = 'bandpass';
     bp.frequency.value = freqHz;
-    bp.Q.value = 2.5;
+    bp.Q.value = 2.0;
 
     var gNode = ctx.createGain();
     var now = ctx.currentTime;
@@ -88,35 +95,16 @@
 
     src.connect(bp);
     bp.connect(gNode);
-    gNode.connect(ctx.destination);
+    gNode.connect(dest);
     src.start(now);
     src.stop(now + durationSec + 0.005);
   }
 
-  /**
-   * Oscillator with ADSR into a lowpass resonant filter.
-   * @param {AudioContext} ctx
-   * @param {number} freq       fundamental Hz
-   * @param {string} type       OscillatorType
-   * @param {number} detune     cents
-   * @param {number} gain       peak gain
-   * @param {number} attack     sec
-   * @param {number} sustain    sec
-   * @param {number} release    sec
-   * @param {number} lpFreq     lowpass cutoff Hz
-   * @param {number} lpQ        lowpass Q
-   * @param {number} delay      start delay sec
-   */
-  function _oscLayer(ctx, freq, type, detune, gain, attack, sustain, release, lpFreq, lpQ, delay) {
+  /* ── Simple helper oscillator for cues ───────────────────── */
+  function _cueTone(ctx, freq, type, gain, attack, sustain, release, delay) {
     var osc = ctx.createOscillator();
     osc.type = type;
     osc.frequency.value = freq;
-    osc.detune.value = detune || 0;
-
-    var lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = lpFreq || 950;
-    lp.Q.value = lpQ || 3.5;
 
     var gNode = ctx.createGain();
     var now = ctx.currentTime + (delay || 0);
@@ -125,81 +113,142 @@
     gNode.gain.setValueAtTime(gain, now + attack + sustain);
     gNode.gain.exponentialRampToValueAtTime(0.0001, now + attack + sustain + release);
 
-    osc.connect(lp);
-    lp.connect(gNode);
+    osc.connect(gNode);
     gNode.connect(ctx.destination);
-
     var total = (delay || 0) + attack + sustain + release + 0.02;
     osc.start(now);
     osc.stop(ctx.currentTime + total);
   }
 
-  /* ── Main buzzer synthesis ───────────────────────────────── */
-
+  /* ── Main 60Hz Electromagnetic Coil Game-Show Buzzer ─────── */
   /**
-   * Play a realistic game-show electromechanical relay buzzer.
+   * Play authentic 420ms mechanical solenoid buzzer ("BZZZZT!").
    * @param {'A'|'B'|'STAGE'} variant
    */
-  function playRealBuzzer(variant) {
+  async function playRealBuzzer(variant) {
     if (_muted) return;
-    var ctx = _ensureCtx();
+    var ctx = await _resumeCtx();
     if (!ctx) return;
 
-    // Frequencies per variant
-    //   A: 142 Hz (fundamental)  + 284 Hz (octave)
-    //   B: 168 Hz (fundamental)  + 336 Hz (octave)
-    //   STAGE: 148 + 222 Hz chord
-    var f1, f2;
+    var lfoFreq;
+    var harmonics;
     if (variant === 'B') {
-      f1 = 168; f2 = 336;
+      lfoFreq = 64;
+      harmonics = [128, 192, 256];
     } else if (variant === 'STAGE') {
-      f1 = 148; f2 = 222;
+      lfoFreq = 60;
+      harmonics = [120, 180, 240, 300];
     } else {
-      f1 = 142; f2 = 284; // A (default)
+      lfoFreq = 58;
+      harmonics = [116, 174, 232];
     }
 
-    // 1. Relay click transient (12 ms noise burst at 800 Hz bandpass)
-    _noiseClick(ctx, 0.012, 800, 0.35);
+    var now = ctx.currentTime;
+    var totalDur = 0.420; // 420ms
+    var attack = 0.005;
+    var release = 0.065;
+    var sustainEnd = totalDur - release;
 
-    // 2. Rich harmonic buzz — sawtooth fundamental
-    _oscLayer(ctx, f1, 'sawtooth', 0,   0.22, 0.005, 0.360, 0.065, 950, 3.5, 0.002);
-    // 3. Square octave (adds clang)
-    _oscLayer(ctx, f2, 'square',   0,   0.10, 0.005, 0.330, 0.055, 950, 3.5, 0.003);
-    // 4. Slight detuned sawtooth for width
-    _oscLayer(ctx, f1, 'sawtooth', 12,  0.08, 0.008, 0.310, 0.060, 950, 3.5, 0.004);
+    // Master ADSR envelope
+    var masterEnv = ctx.createGain();
+    masterEnv.gain.setValueAtTime(0.0001, now);
+    masterEnv.gain.exponentialRampToValueAtTime(0.55, now + attack);
+    masterEnv.gain.setValueAtTime(0.55, now + sustainEnd);
+    masterEnv.gain.exponentialRampToValueAtTime(0.0001, now + totalDur);
+    masterEnv.connect(ctx.destination);
+
+    // 1. Mechanical solenoid snap at t=0
+    _noiseClick(ctx, masterEnv, 0.014, 900, 0.45);
+
+    // 2. 60Hz Armature Chatter (AM Modulator: 0.35 .. 1.0)
+    var amGain = ctx.createGain();
+    amGain.gain.value = 0.675; // midpoint of [0.35, 1.0]
+
+    var lfo = ctx.createOscillator();
+    lfo.type = 'square';
+    lfo.frequency.value = lfoFreq;
+
+    var lfoDepth = ctx.createGain();
+    lfoDepth.gain.value = 0.325; // +/- 0.325 => [0.35, 1.0]
+    lfo.connect(lfoDepth);
+    lfoDepth.connect(amGain.gain);
+
+    // 3. Resonant brass coil filter chain: WaveShaper -> Peaking(420Hz, +6dB) -> Lowpass(2400Hz) -> amGain -> masterEnv
+    var shaper = ctx.createWaveShaper();
+    shaper.curve = _getSoftClipCurve();
+    shaper.oversample = '2x';
+
+    var peaking = ctx.createBiquadFilter();
+    peaking.type = 'peaking';
+    peaking.frequency.value = 420;
+    peaking.Q.value = 1.8;
+    peaking.gain.value = 6.0;
+
+    var lowpass = ctx.createBiquadFilter();
+    lowpass.type = 'lowpass';
+    lowpass.frequency.value = 2400;
+    lowpass.Q.value = 1.4;
+
+    shaper.connect(peaking);
+    peaking.connect(lowpass);
+    lowpass.connect(amGain);
+    amGain.connect(masterEnv);
+
+    // 4. Layered sawtooth + square brass coil harmonics
+    var oscGainPerVoice = 0.45 / harmonics.length;
+    var oscs = [];
+    for (var i = 0; i < harmonics.length; i++) {
+      var freq = harmonics[i];
+
+      var saw = ctx.createOscillator();
+      saw.type = 'sawtooth';
+      saw.frequency.value = freq;
+      var sawG = ctx.createGain();
+      sawG.gain.value = oscGainPerVoice;
+      saw.connect(sawG);
+      sawG.connect(shaper);
+      oscs.push(saw);
+
+      var sq = ctx.createOscillator();
+      sq.type = 'square';
+      sq.frequency.value = freq;
+      var sqG = ctx.createGain();
+      sqG.gain.value = oscGainPerVoice * 0.55;
+      sq.connect(sqG);
+      sqG.connect(shaper);
+      oscs.push(sq);
+    }
+
+    lfo.start(now);
+    lfo.stop(now + totalDur + 0.02);
+    for (var j = 0; j < oscs.length; j++) {
+      oscs[j].start(now);
+      oscs[j].stop(now + totalDur + 0.02);
+    }
   }
 
-  /* ── Helper cues ─────────────────────────────────────────── */
-
-  /**
-   * Low double-pulse warning: used when -5 steal passes to opposing team.
-   */
-  function playPassOver() {
+  /* ── Additional Stage Cues ───────────────────────────────── */
+  async function playPassOver() {
     if (_muted) return;
-    var ctx = _ensureCtx();
+    var ctx = await _resumeCtx();
     if (!ctx) return;
-    // Two descending pulses
-    _oscLayer(ctx, 320, 'triangle', 0, 0.12, 0.010, 0.080, 0.050, 600, 2, 0.000);
-    _oscLayer(ctx, 260, 'triangle', 0, 0.10, 0.010, 0.080, 0.050, 600, 2, 0.160);
+    _cueTone(ctx, 320, 'triangle', 0.14, 0.010, 0.080, 0.050, 0.000);
+    _cueTone(ctx, 260, 'triangle', 0.12, 0.010, 0.080, 0.050, 0.160);
   }
 
-  /**
-   * Subtle crisp chime when buzzers re-arm.
-   */
-  function playArmReset() {
+  async function playArmReset() {
     if (_muted) return;
-    var ctx = _ensureCtx();
+    var ctx = await _resumeCtx();
     if (!ctx) return;
-    _oscLayer(ctx, 880,  'sine', 0, 0.07, 0.008, 0.060, 0.080, 2000, 1, 0.000);
-    _oscLayer(ctx, 1320, 'sine', 0, 0.05, 0.008, 0.050, 0.070, 2000, 1, 0.055);
+    _cueTone(ctx, 880, 'sine', 0.08, 0.008, 0.060, 0.080, 0.000);
+    _cueTone(ctx, 1320, 'sine', 0.06, 0.008, 0.050, 0.070, 0.055);
   }
 
   /* ── Public API ──────────────────────────────────────────── */
-  var QuizBuzzerSFX = {
+  global.QuizBuzzerSFX = {
     playRealBuzzer: playRealBuzzer,
-    playPassOver:   playPassOver,
-    playArmReset:   playArmReset,
-
+    playPassOver: playPassOver,
+    playArmReset: playArmReset,
     setMuted: function (val) {
       _muted = !!val;
       _saveMuted(_muted);
@@ -207,19 +256,14 @@
     isMuted: function () {
       return _muted;
     },
-    /** Force AudioContext init (call from a user gesture handler). */
     unlock: function () {
-      _ensureCtx();
+      _resumeCtx();
     }
   };
 
-  global.QuizBuzzerSFX = QuizBuzzerSFX;
-
-  // Auto-attach gesture unlock
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', _unlockOnGesture);
+    document.addEventListener('DOMContentLoaded', _attachUnlockListeners);
   } else {
-    _unlockOnGesture();
+    _attachUnlockListeners();
   }
-
 }(typeof window !== 'undefined' ? window : this));

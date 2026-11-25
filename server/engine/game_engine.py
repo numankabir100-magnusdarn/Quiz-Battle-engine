@@ -20,6 +20,12 @@ from server.engine.models import (
 from server.engine.questions import QuestionProvider, SampleQuestionProvider
 
 
+RAPID_FIRE_CORRECT_POINTS = 10
+BUZZER_CORRECT_POINTS = 15
+BUZZER_WRONG_PENALTY = 5
+SCORE_ACTION_GUARD_SECONDS = 0.150
+
+
 class GameEngine:
     """Pure Python game engine for EEE Brain Battle.
     Contains zero web/FastAPI code. Entirely unit-testable.
@@ -54,6 +60,8 @@ class GameEngine:
         self.snapshot_saver: Optional[Any] = None
         self.buzzer_source_mode: str = "ESP32"
         self.strict_esp32: bool = False
+        self._last_score_guard_key: str = ""
+        self._last_score_guard_at: float = 0.0
 
         if auto_init_tournament:
             self.init_default_tournament()
@@ -80,6 +88,50 @@ class GameEngine:
             return
         self.current_match.ensure_stats([team_id])
         self.current_match.stats[team_id][key] += int(delta)
+
+    def _zero_match_counters(self) -> None:
+        match = self.current_match
+        if match:
+            team_ids = [team_id for team_id in (match.team_a_id, match.team_b_id) if team_id]
+            match.ensure_stats(team_ids)
+            for team_id in team_ids:
+                match.scores[team_id] = 0
+                match.stats[team_id] = {key: 0 for key in MATCH_STAT_KEYS}
+                self._set_team_score(team_id, 0)
+            match.winner_id = None
+            match.loser_id = None
+        self.question_matrix = QuestionMatrixState(
+            total_questions=self.question_matrix.total_questions,
+            routing_mode=self.round.routing_mode,
+            turn_start_side=self.round.turn_start_side,
+            team_block_size=self.round.team_block_size,
+        )
+        self._rapid_fire_started_at = None
+        self._rapid_fire_durations = []
+        self._rapid_fire_streak = 0
+        self._last_score_guard_key = ""
+        self._last_score_guard_at = 0.0
+
+    def _score_guard_team(self, team_id: Optional[str]) -> Optional[str]:
+        if team_id:
+            return team_id
+        phase = self.round.phase
+        if phase == RoundPhase.RAPID_FIRE.value:
+            return self.round.active_team_id
+        if phase in (RoundPhase.BUZZER_BATTLE.value, RoundPhase.SUDDEN_DEATH.value):
+            return self.buzzers.passed_to_team or self.buzzers.first_team
+        return self.current_match.team_a_id if self.current_match else None
+
+    def _score_action_allowed(self, action: str, team_id: Optional[str]) -> bool:
+        question_number = self.question.current_question.number if self.question.current_question else None
+        effective_team = self._score_guard_team(team_id)
+        key = f"{action}|{self.round.phase}|{question_number}|{effective_team or ''}"
+        now = time.monotonic()
+        if key == self._last_score_guard_key and (now - self._last_score_guard_at) < SCORE_ACTION_GUARD_SECONDS:
+            return False
+        self._last_score_guard_key = key
+        self._last_score_guard_at = now
+        return True
 
     def _upsert_match_history(self, team_id: str, outcome: Optional[str] = None) -> None:
         """Records or refreshes one team's ledger row for the active match."""
@@ -284,12 +336,9 @@ class GameEngine:
         self.round = RoundState(phase=RoundPhase.IDLE.value, timer_seconds_remaining=0, timer_running=False)
         self.question = QuestionState()
         self.buzzers = BuzzersState(locked=True)
-        self.question_matrix = QuestionMatrixState()
         self._undo_stack = []
-        self._rapid_fire_started_at = None
-        self._rapid_fire_durations = []
-        self._rapid_fire_streak = 0
         self._question_index = 0
+        self._zero_match_counters()
 
         self._log_action(
             "setup_match",
@@ -342,6 +391,8 @@ class GameEngine:
         self._rapid_fire_started_at = None
         self._rapid_fire_durations = []
         self._rapid_fire_streak = 0
+        self._last_score_guard_key = ""
+        self._last_score_guard_at = 0.0
 
         self._log_action(
             "start_rapid_fire",
@@ -349,7 +400,10 @@ class GameEngine:
         )
 
     def start_buzzer_battle(self) -> None:
-        """Starts Buzzer Battle phase."""
+        """Starts Buzzer Battle phase.
+        Fix: Arms Q1 immediately — sets buzzers unlocked and question open so
+        hardware & mobile buzzers are ready from millisecond zero.
+        """
         if not self.current_match:
             raise ValueError("No active match configured")
 
@@ -359,10 +413,19 @@ class GameEngine:
         self.round.routing_mode = "BUZZER_OPEN"
         self.question_matrix.routing_mode = "BUZZER_OPEN"
         self.round.timer_running = False
-        self.buzzers = BuzzersState(locked=True)
-        self.question = QuestionState()
+        self.round.timer_seconds_remaining = 0
+        # Arm Q1 immediately: open question and unlock buzzers
+        self.question = QuestionState(is_open=True)
+        self.buzzers = BuzzersState(
+            locked=False,
+            first_team=None,
+            press_timestamp=None,
+            penalised_team=None,
+            passed_to_team=None,
+            attempted_teams=[],
+        )
 
-        self._log_action("start_buzzer_battle", {"match_number": self.match_number})
+        self._log_action("start_buzzer_battle", {"match_number": self.match_number, "q1_armed": True})
 
     def open_question(self, question_card: Optional[QuestionCard] = None) -> Dict[str, Any]:
         """Opens a question for answering.
@@ -670,7 +733,8 @@ class GameEngine:
 
     def mark_question_won(self, team_id: str) -> Dict[str, Any]:
         if not self.question_matrix.current_question_num:
-            raise ValueError("No matrix question is active")
+            # Spoken-matrix mode: no matrix slot active yet — skip matrix update silently
+            return self.question_matrix.to_dict()
         if not self.current_match or team_id not in (
             self.current_match.team_a_id,
             self.current_match.team_b_id,
@@ -686,7 +750,8 @@ class GameEngine:
         if record_undo:
             self._record_undo_snapshot("mark_question_dead")
         if not self.question_matrix.current_question_num:
-            raise ValueError("No matrix question is active")
+            # Spoken-matrix mode: no matrix slot active — skip silently
+            return self.question_matrix.to_dict()
         item = self._matrix_status(self.question_matrix.current_question_num)
         item.update({"status": "dead", "winner_side": None, "phase": self.round.phase})
         self.question_matrix.recalculate()
@@ -772,10 +837,22 @@ class GameEngine:
         - Rapid Fire: +10 pts (no negative marking)
         - Buzzer Battle: +15 pts
         - Sudden Death: +15 pts, first correct answer immediately wins match!
+
+        Note: In spoken-matrix mode (BUZZER_BATTLE / SUDDEN_DEATH) the
+        current_question card may be None when Q1 was armed directly by
+        start_buzzer_battle / start_sudden_death without an open_question call.
+        In that case we fall back to phase-appropriate default points.
         """
         if not self.current_match:
             raise ValueError("No active match configured")
-        if not self.question.is_open or not self.question.current_question:
+        if not self._score_action_allowed("mark_correct", team_id):
+            return {"status": "DUPLICATE_IGNORED", "duplicate": True, "team_id": team_id}
+        phase = self.round.phase
+        # Allow spoken-matrix mode: buzzer phases with is_open=True but no card
+        buzzer_spoken = phase in (RoundPhase.BUZZER_BATTLE.value, RoundPhase.SUDDEN_DEATH.value)
+        if not self.question.is_open:
+            raise ValueError("No open question to mark correct")
+        if not self.question.current_question and not buzzer_spoken:
             raise ValueError("No open question to mark correct")
 
         self._record_undo_snapshot("mark_correct")
@@ -786,15 +863,15 @@ class GameEngine:
             target_team = team_id or self.round.active_team_id
             if not target_team:
                 raise ValueError("No active team set for Rapid Fire")
-            points = self.question.current_question.points
+            points = RAPID_FIRE_CORRECT_POINTS
         elif phase in (RoundPhase.BUZZER_BATTLE.value, RoundPhase.SUDDEN_DEATH.value):
             target_team = team_id or self.buzzers.first_team or self.buzzers.passed_to_team
             if not target_team:
                 raise ValueError("No team selected (no buzz registered)")
-            points = self.question.current_question.points
+            points = BUZZER_CORRECT_POINTS
         else:
             target_team = team_id or self.current_match.team_a_id
-            points = self.question.current_question.points
+            points = RAPID_FIRE_CORRECT_POINTS
 
         # Award points
         old_score = self.current_match.scores.get(target_team, 0)
@@ -857,14 +934,22 @@ class GameEngine:
           Passes to the OTHER team only, without being reread.
           If both teams fail, question closes.
         - Sudden Death: passes to other team; if both fail, question closes (moderator opens next).
+
+        Note: In spoken-matrix buzzer mode, current_question may be None.
+        is_open=True is the authoritative signal.
         """
         if not self.current_match:
             raise ValueError("No active match configured")
-        if not self.question.is_open or not self.question.current_question:
+        if not self._score_action_allowed("mark_wrong", team_id):
+            return {"status": "DUPLICATE_IGNORED", "duplicate": True, "team_id": team_id}
+        phase = self.round.phase
+        buzzer_spoken = phase in (RoundPhase.BUZZER_BATTLE.value, RoundPhase.SUDDEN_DEATH.value)
+        if not self.question.is_open:
+            raise ValueError("No open question to mark wrong")
+        if not self.question.current_question and not buzzer_spoken:
             raise ValueError("No open question to mark wrong")
 
         self._record_undo_snapshot("mark_wrong")
-        phase = self.round.phase
         if phase == RoundPhase.RAPID_FIRE.value:
             self._rapid_fire_streak = 0
             if self._rapid_fire_started_at is not None:
@@ -888,7 +973,7 @@ class GameEngine:
             if not target_team:
                 raise ValueError("No team selected (no buzz registered)")
 
-            penalty = 5 if phase == RoundPhase.BUZZER_BATTLE.value else 0
+            penalty = BUZZER_WRONG_PENALTY
             if penalty > 0:
                 old_score = self.current_match.scores.get(target_team, 0)
                 new_score = old_score - penalty
@@ -1062,6 +1147,7 @@ class GameEngine:
     def start_sudden_death(self) -> None:
         """Starts Sudden Death phase.
         Rule: "Tie at match end: SUDDEN_DEATH with buzzer questions; first correct answer wins."
+        Fix: Arms Q1 immediately — buzzers unlocked and question open from the start.
         """
         if not self.current_match:
             raise ValueError("No active match configured")
@@ -1069,10 +1155,19 @@ class GameEngine:
         self.round.phase = RoundPhase.SUDDEN_DEATH.value
         self._spoken_matrix_mode = True
         self.round.timer_running = False
-        self.buzzers = BuzzersState(locked=True)
-        self.question = QuestionState()
+        self.round.timer_seconds_remaining = 0
+        # Arm Q1 immediately
+        self.question = QuestionState(is_open=True)
+        self.buzzers = BuzzersState(
+            locked=False,
+            first_team=None,
+            press_timestamp=None,
+            penalised_team=None,
+            passed_to_team=None,
+            attempted_teams=[],
+        )
 
-        self._log_action("start_sudden_death", {"match_number": self.match_number})
+        self._log_action("start_sudden_death", {"match_number": self.match_number, "q1_armed": True})
 
     def end_match(self) -> Dict[str, Any]:
         """Ends current match and determines winner/loser.
@@ -1111,6 +1206,83 @@ class GameEngine:
             "winner_id": winner_id,
             "loser_id": loser_id,
             "scores": {t_a: score_a, t_b: score_b},
+        }
+
+    def advance_winner(self, match_number: Any, winner_id: Optional[str] = None) -> Dict[str, Any]:
+        """Advances the winner of a specific bracket match (M1-M13) to the next round.
+        If winner_id is omitted or empty, auto-determines from match scores; raises ValueError if tied.
+        """
+        try:
+            m_num = int(match_number)
+        except (TypeError, ValueError):
+            raise ValueError(f"Invalid match_number '{match_number}'")
+
+        match = next((m for m in self.bracket.matches if m.match_number == m_num), None)
+        if not match:
+            raise ValueError(f"Match M{m_num:02d} not found in bracket")
+
+        t_a = match.team_a_id
+        t_b = match.team_b_id
+        if not t_a or not t_b:
+            raise ValueError(f"Match M{m_num:02d} is missing teams and cannot be advanced yet")
+
+        # Sync live scores if this is the active match
+        if self.current_match and self.current_match.match_number == m_num:
+            match.scores = dict(self.current_match.scores)
+
+        score_a = int(match.scores.get(t_a, 0))
+        score_b = int(match.scores.get(t_b, 0))
+
+        normalized_winner = str(winner_id).strip() if winner_id else ""
+        if normalized_winner:
+            if normalized_winner not in (t_a, t_b):
+                raise ValueError(f"winner_id '{normalized_winner}' is not a participant in M{m_num:02d}")
+            resolved_winner = normalized_winner
+        else:
+            if score_a > score_b:
+                resolved_winner = t_a
+            elif score_b > score_a:
+                resolved_winner = t_b
+            else:
+                raise ValueError(
+                    f"Match M{m_num:02d} is tied ({score_a}–{score_b}). Break the tie or specify winner_id before advancing."
+                )
+
+        resolved_loser = t_b if resolved_winner == t_a else t_a
+
+        if self.current_match and self.current_match.match_number == m_num:
+            self._finalize_match(winner_id=resolved_winner, loser_id=resolved_loser)
+        else:
+            was_completed = match.status == "COMPLETED"
+            match.winner_id = resolved_winner
+            match.loser_id = resolved_loser
+            match.status = "COMPLETED"
+            if not was_completed:
+                if resolved_winner in self.teams:
+                    self.teams[resolved_winner].win_loss["wins"] += 1
+                    self.teams[resolved_winner].matches_played += 1
+                if resolved_loser in self.teams:
+                    self.teams[resolved_loser].win_loss["losses"] += 1
+                    self.teams[resolved_loser].matches_played += 1
+            self._check_bracket_progression()
+
+        self._log_action(
+            "advance_winner",
+            {
+                "match_number": m_num,
+                "winner_id": resolved_winner,
+                "loser_id": resolved_loser,
+                "scores": {t_a: score_a, t_b: score_b},
+            },
+        )
+
+        return {
+            "status": "COMPLETED",
+            "match_number": m_num,
+            "winner_id": resolved_winner,
+            "loser_id": resolved_loser,
+            "scores": {t_a: score_a, t_b: score_b},
+            "champion": self.bracket.champion,
         }
 
     def _finalize_match(self, winner_id: str, loser_id: str) -> None:
@@ -1215,6 +1387,11 @@ class GameEngine:
             turn_start_side=self.round.turn_start_side,
             team_block_size=self.round.team_block_size,
         )
+        self._rapid_fire_started_at = None
+        self._rapid_fire_durations = []
+        self._rapid_fire_streak = 0
+        self._last_score_guard_key = ""
+        self._last_score_guard_at = 0.0
 
         self._log_action("reset_match", {"match_number": self.match_number})
 
@@ -1515,9 +1692,54 @@ class GameEngine:
                 "loser_name": l_name,
             })
 
-        # Standings: All 12 teams sorted by wins desc, total_score desc
+        # Standings: All 12 teams sorted by wins desc, total_score desc — enriched
         standings = []
+        final_match = next((m for m in self.bracket.matches if m.match_number == 13), None)
+        semi_match_nums = {11, 12}
+        qf_match_nums = {7, 8, 9, 10}
         for t_id, team in self.teams.items():
+            history = team.match_history
+            rf_pts = sum(int(h.get("rapid_fire_points", 0)) for h in history)
+            bz_pts = sum(int(h.get("buzzer_points", 0)) for h in history)
+            fouls  = sum(int(h.get("foul_penalties", 0)) for h in history)
+            # Live match contribution
+            live_pts = 0
+            if (self.current_match and self.current_match.status == "IN_PROGRESS"
+                    and t_id in (self.current_match.team_a_id, self.current_match.team_b_id)):
+                live_pts = int(self.current_match.scores.get(t_id, 0))
+            # Status badge
+            status = "ACTIVE"
+            if self.bracket.champion == t_id:
+                status = "CHAMPION"
+            elif (final_match and final_match.status == "COMPLETED"
+                  and t_id in (final_match.team_a_id, final_match.team_b_id)
+                  and self.bracket.champion != t_id):
+                status = "FINALIST"
+            elif any(
+                m.status == "COMPLETED" and m.winner_id == t_id and m.match_number in semi_match_nums
+                for m in self.bracket.matches
+            ) and self.bracket.champion != t_id and (
+                not final_match or t_id not in (final_match.team_a_id, final_match.team_b_id)
+            ):
+                status = "SEMIFINALIST"
+            elif any(
+                m.status == "COMPLETED" and m.winner_id == t_id and m.match_number in qf_match_nums
+                for m in self.bracket.matches
+            ) and self.bracket.champion != t_id and not any(
+                m.winner_id == t_id and m.match_number in semi_match_nums
+                for m in self.bracket.matches
+            ):
+                status = "QUARTERFINALIST"
+            elif t_id in self.bracket.wild_cards:
+                status = "WILD_CARD"
+            elif team.win_loss.get("losses", 0) > 0 and team.win_loss.get("wins", 0) == 0:
+                status = "ELIMINATED"
+            # In-match live badge
+            in_live_match = (
+                self.current_match is not None
+                and self.current_match.status == "IN_PROGRESS"
+                and t_id in (self.current_match.team_a_id, self.current_match.team_b_id)
+            )
             standings.append({
                 "team_id": t_id,
                 "name": team.name,
@@ -1527,10 +1749,65 @@ class GameEngine:
                 "matches_played": team.matches_played,
                 "total_points": team.total_points,
                 "total_score": team.total_points,
+                "rapid_fire_points": rf_pts,
+                "buzzer_points": bz_pts,
+                "foul_penalties": fouls,
+                "live_match_points": live_pts,
+                "in_live_match": in_live_match,
+                "status": status,
                 "accent_color": team.accent_color,
                 "wild_card_qualified": t_id in self.bracket.wild_cards,
+                "match_history": list(history),
             })
         standings.sort(key=lambda x: (x["wins"], x["total_score"]), reverse=True)
+        for i, s in enumerate(standings):
+            s["rank"] = i + 1
+
+        # Highlights
+        top_rf = max(standings, key=lambda x: x["rapid_fire_points"], default=None)
+        top_bz = max(standings, key=lambda x: x["buzzer_points"], default=None)
+        # Highest single-match score across all completed matches
+        best_match_score = None
+        for m in completed_matches:
+            for t_id2 in (m.team_a_id, m.team_b_id):
+                if t_id2:
+                    sc = int(m.scores.get(t_id2, 0))
+                    if best_match_score is None or sc > best_match_score["score"]:
+                        best_match_score = {
+                            "score": sc,
+                            "team_id": t_id2,
+                            "team_name": self.teams[t_id2].name if t_id2 in self.teams else t_id2,
+                            "match_number": m.match_number,
+                        }
+        # Live match summary
+        live_match_summary = None
+        if self.current_match and self.current_match.status == "IN_PROGRESS":
+            cm = self.current_match
+            live_match_summary = {
+                "match_number": cm.match_number,
+                "stage": cm.stage,
+                "team_a_id": cm.team_a_id,
+                "team_b_id": cm.team_b_id,
+                "team_a_name": self.teams[cm.team_a_id].name if cm.team_a_id in self.teams else cm.team_a_id,
+                "team_b_name": self.teams[cm.team_b_id].name if cm.team_b_id in self.teams else cm.team_b_id,
+                "score_a": int(cm.scores.get(cm.team_a_id, 0)) if cm.team_a_id else 0,
+                "score_b": int(cm.scores.get(cm.team_b_id, 0)) if cm.team_b_id else 0,
+                "phase": self.round.phase if self.round else None,
+            }
+        highlights = {
+            "highest_match_score": best_match_score,
+            "top_rapid_fire_team": {
+                "team_id": top_rf["team_id"],
+                "name": top_rf["name"],
+                "points": top_rf["rapid_fire_points"],
+            } if top_rf else None,
+            "top_buzzer_team": {
+                "team_id": top_bz["team_id"],
+                "name": top_bz["name"],
+                "points": top_bz["buzzer_points"],
+            } if top_bz else None,
+            "live_match": live_match_summary,
+        }
 
         return {
             "total_matches": total_matches,
@@ -1543,6 +1820,7 @@ class GameEngine:
             "champion": self.bracket.champion,
             "wild_cards": list(self.bracket.wild_cards),
             "wild_card_tied_teams": list(self.bracket.wild_card_tied_teams),
+            "highlights": highlights,
         }
 
     def advance_and_load_next(self) -> Dict[str, Any]:
@@ -1754,6 +2032,8 @@ class GameEngine:
         self.round.team_block_size = int(routing.get("block_size", self.round.team_block_size))
         telemetry = state_dict.get("telemetry", {})
         self._rapid_fire_streak = int(telemetry.get("current_streak", 0))
+        self._last_score_guard_key = ""
+        self._last_score_guard_at = 0.0
         self.buzzers = BuzzersState.from_dict(state_dict.get("buzzers", {}))
         self.buzzer_source_mode = str(state_dict.get("buzzer_source_mode", self.buzzers.source_mode or "ESP32")).upper()
         self.buzzers.source_mode = self.buzzer_source_mode

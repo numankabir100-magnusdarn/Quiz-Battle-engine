@@ -33,7 +33,7 @@ html, body { height: 100%; }
 .results-body {
   background: var(--res-bg);
   color: var(--text);
-  font-family: var(--font-sans);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
   font-size: 13px;
   display: flex;
   flex-direction: column;
@@ -515,22 +515,4 @@ html, body { height: 100%; }
   .res-col-right { border-top: 1px solid var(--res-border-dim); }
   .res-highlights { grid-template-columns: 1fr; }
   .res-topbar-center { display: none; }
-}
-
-/* Font matching with theme.css monospace telemetry & numeric columns */
-.res-progress-text,
-.res-ws-pill,
-.res-live-match-label,
-.res-live-score-a,
-.res-live-score-b,
-.res-hl-value,
-.res-rank-cell,
-.res-table td.td-num,
-.res-table td.td-total,
-.res-bracket-match-num,
-.res-bracket-match-score,
-.res-mc-num,
-.res-mc-score {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
 }

@@ -1,71 +1,57 @@
 /**
  * EEECi FA'26 — EEE Brain Battle (Module 06)
- * Moderator Console Client Controller
- * 100% Offline, Server-Authoritative Real-Time WebSocket Synchronization
+ * Moderator Console — Fully Rewired Controller
+ * 100% Offline • Server-Authoritative WebSocket • Zero Stubs
  */
 
 (function () {
   "use strict";
 
-  // ── DOM References ───────────────────────────────────────────
-  var pinGate = document.getElementById("pinGate");
-  var panel = document.getElementById("panel");
-  var pinForm = document.getElementById("pinForm");
-  var pinInput = document.getElementById("pinInput");
-  var pinError = document.getElementById("pinError");
-  var actionToast = document.getElementById("actionToast");
+  // ── DOM References ──────────────────────────────────────────────
+  var pinGate   = document.getElementById("pinGate");
+  var panel     = document.getElementById("panel");
+  var pinForm   = document.getElementById("pinForm");
+  var pinInput  = document.getElementById("pinInput");
+  var pinError  = document.getElementById("pinError");
+
+  var actionToast   = document.getElementById("actionToast");
   var actionMessage = document.getElementById("actionMessage");
-  var btnUndo = document.getElementById("btnUndo");
-  var btnCorrect = document.getElementById("btnCorrect");
-  var btnWrong = document.getElementById("btnWrong");
+  var btnUndo       = document.getElementById("btnUndo");
+  var btnCorrect    = document.getElementById("btnCorrect");
+  var btnWrong      = document.getElementById("btnWrong");
   var shortcutsToggle = document.getElementById("shortcutsToggle");
 
-  // ── Session & Client State ───────────────────────────────────
-  var pin = sessionStorage.getItem("moderator_pin") || "";
-  var client = null;
-  var latestState = {};
-  var timerHandle = null;
-  var timerEndsAt = 0;
-  var timerIsRunning = false;
-  var lastRenderedSeconds = -1;
-  var lastRenderedRunning = false;
+  // ── Session State ───────────────────────────────────────────────
+  var pin           = sessionStorage.getItem("moderator_pin") || "";
+  var client        = null;
+  var latestState   = {};
+  var toastTimer    = null;
   var autoAdvanceTimer = null;
-  var toastTimer = null;
 
-  // ── HTTP API Helper ──────────────────────────────────────────
+  // ── Timer State ─────────────────────────────────────────────────
+  var timerHandle     = null;
+  var timerEndsAt     = 0;
+  var timerIsRunning  = false;
+  var lastRenderedSec = -1;
+  var lastRenderedRunning = false;
+
+  // Ring geometry (r=82, circumference = 2π·82 ≈ 515.2)
+  var RING_CIRC = 2 * Math.PI * 82;
+
+  // ── HTTP Helper ─────────────────────────────────────────────────
   function api(path, options) {
-    return fetch(
-      path,
-      Object.assign(
-        {
-          credentials: "same-origin",
-          headers: { "Content-Type": "application/json" }
-        },
-        options || {}
-      )
-    );
+    return fetch(path, Object.assign({ credentials: "same-origin",
+      headers: { "Content-Type": "application/json" } }, options || {}));
   }
 
-  // ── Authentication Management ────────────────────────────────
-  function setAuthenticated(value) {
-    pinGate.classList.toggle("hidden", value);
-    panel.classList.toggle("hidden", !value);
-    if (value) {
-      connect();
-    } else if (client && client.stop) {
-      client.stop();
-    }
-  }
-
+  // ── Toast ───────────────────────────────────────────────────────
   function showToast(text, isError) {
     if (actionToast) {
       actionToast.textContent = text;
       actionToast.className = "action-toast " + (isError ? "error" : "success");
       actionToast.classList.remove("hidden");
       if (toastTimer) clearTimeout(toastTimer);
-      toastTimer = setTimeout(function () {
-        actionToast.classList.add("hidden");
-      }, 4000);
+      toastTimer = setTimeout(function () { actionToast.classList.add("hidden"); }, 4000);
     }
     if (actionMessage) {
       actionMessage.textContent = text;
@@ -73,16 +59,17 @@
     }
   }
 
-  // ── WebSocket Connection via QuizClient ──────────────────────
-  function connect() {
-    if (!window.QuizClient) {
-      showToast("Shared client library unavailable.", true);
-      return;
-    }
+  // ── Auth ────────────────────────────────────────────────────────
+  function setAuthenticated(value) {
+    pinGate.classList.toggle("hidden", value);
+    panel.classList.toggle("hidden", !value);
+    if (value) { connect(); }
+    else if (client && client.stop) { client.stop(); }
+  }
 
-    if (client && client.stop) {
-      client.stop();
-    }
+  function connect() {
+    if (!window.QuizClient) { showToast("Client library unavailable.", true); return; }
+    if (client && client.stop) client.stop();
 
     client = new window.QuizClient({
       role: "moderator",
@@ -98,77 +85,67 @@
           badge.className = "latency " + (ms > 80 ? "bad" : ms > 35 ? "warn" : "good");
         }
       },
-      onState: renderState,
-      onEvent: handleEvent,
-      onAck: handleAck,
-      onError: handleError
+      onState:  renderState,
+      onEvent:  handleEvent,
+      onAck:    handleAck,
+      onError:  handleError
     });
-
     client.init();
   }
 
-  function setStatus(text, className) {
-    var status = document.getElementById("statusBanner");
-    if (status) {
-      status.textContent = text.toUpperCase();
-      status.className = "status " + className;
-    }
+  function setStatus(text, cls) {
+    var el = document.getElementById("statusBanner");
+    if (el) { el.textContent = text.toUpperCase(); el.className = "status " + cls; }
   }
 
+  // ── Send Action ─────────────────────────────────────────────────
   function send(action, payload, reason) {
     if (!client || !client.sendAction) {
-      showToast("Console is not connected yet. Waiting for WebSocket...", true);
+      showToast("Console not connected. Waiting for WebSocket...", true);
       return false;
     }
-    if (action === "next_question" || action === "previous_question" || action === "select_question" || action === "undo_last_action") {
-      if (autoAdvanceTimer) {
-        clearTimeout(autoAdvanceTimer);
-        autoAdvanceTimer = null;
-      }
+    // Cancel any pending auto-advance if the moderator takes manual control
+    if (["next_question","previous_question","select_question","undo_last_action"].indexOf(action) !== -1) {
+      if (autoAdvanceTimer) { clearTimeout(autoAdvanceTimer); autoAdvanceTimer = null; }
     }
     var ok = client.sendAction(action, payload || {}, reason || "");
-    if (!ok) {
-      showToast("Unable to send action while disconnected.", true);
-    }
+    if (!ok) showToast("Cannot send while disconnected.", true);
     return ok;
   }
 
-  // ── Incoming Message Handlers ─────────────────────────────────
+  // ── ACK Handler (auto-advance after scoring) ────────────────────
   function handleAck(message) {
-    var act = message.action ? message.action.replace(/_/g, " ") : "Action";
-    showToast(act.toUpperCase() + " applied successfully.", false);
+    var act = (message.action || "action").replace(/_/g, " ");
+    showToast(act.toUpperCase() + " applied.", false);
 
-    // Auto-advance to next question upon scoring
     if (message.action === "mark_correct" || message.action === "mark_wrong") {
       var result = message.result || {};
-      var round = (latestState && latestState.round) || {};
+      var round  = (latestState && latestState.round) || {};
       var shouldAdvance = false;
 
       if (message.action === "mark_correct") {
-        shouldAdvance = true;
-      } else if (message.action === "mark_wrong") {
-        // In Rapid Fire, wrong always closes the question and moves forward.
-        // In other modes, advance if question closed / both failed / not passed to other team.
+        // Always advance after correct (unless sudden death — match ended)
+        if (!result.sudden_death_winner) shouldAdvance = true;
+      } else {
+        // Wrong in Rapid Fire always advances; in buzzer only advance if closed
         if (round.phase === "RAPID_FIRE" || result.question_closed || result.both_failed || !result.passed_to) {
           shouldAdvance = true;
         }
       }
 
       if (shouldAdvance) {
-        var matrix = (latestState && latestState.question_matrix) || {};
+        var matrix   = (latestState && latestState.question_matrix) || {};
         var statuses = matrix.statuses || [];
+        var hasUnasked = statuses.some(function (s) { return s.status === "unasked"; });
         var currentNum = Number(matrix.current_question_num) || 0;
-        var totalNum = Number(matrix.total_questions) || statuses.length || 15;
-        var hasUnasked = statuses.some(function (item) {
-          return item.status === "unasked";
-        });
+        var totalNum   = Number(matrix.total_questions) || statuses.length || 15;
 
         if (hasUnasked || currentNum < totalNum) {
           if (autoAdvanceTimer) clearTimeout(autoAdvanceTimer);
           autoAdvanceTimer = setTimeout(function () {
             autoAdvanceTimer = null;
             send("next_question");
-          }, 250);
+          }, 300);
         }
       }
     }
@@ -178,252 +155,383 @@
     showToast(message.message || "Action rejected by server.", true);
   }
 
+  // ── Event Handler ───────────────────────────────────────────────
   function handleEvent(event) {
-    if (event.name === "timer_tick" || event.name === "timer_started" || event.name === "timer_resumed") {
-      var sec = event.seconds_remaining ?? event.seconds ?? 0;
-      var isRun = event.running !== undefined ? Boolean(event.running) : true;
-      updateTimer(sec, isRun);
-    } else if (event.name === "timer_paused") {
-      var sec = event.seconds_remaining ?? event.seconds ?? 0;
+    var name = event.name;
+    if (name === "timer_tick" || name === "timer_started" || name === "timer_resumed") {
+      var sec = event.seconds_remaining != null ? event.seconds_remaining : (event.seconds || 0);
+      updateTimer(sec, Boolean(event.running !== undefined ? event.running : true));
+    } else if (name === "timer_paused") {
+      var sec = event.seconds_remaining != null ? event.seconds_remaining : (event.seconds || 0);
       updateTimer(sec, false);
-    } else if (event.name === "timer_reset") {
-      var sec = event.seconds_remaining ?? event.seconds ?? 120;
+    } else if (name === "timer_reset") {
+      var sec = event.seconds_remaining != null ? event.seconds_remaining : (event.seconds != null ? event.seconds : 120);
       updateTimer(sec, false);
-    } else if (event.name === "timer_expired") {
+    } else if (name === "timer_expired") {
       updateTimer(0, false);
-      showToast("Time expired! Countdown completed.", false);
-    } else if (event.name === "fairness_telemetry") {
+      showToast("⏰ Time expired!", false);
+    } else if (name === "buzz_first") {
+      if (window.QuizBuzzerSFX) window.QuizBuzzerSFX.playRealBuzzer("STAGE");
+      flashBuzzWinner(event.team);
+    } else if (name === "fairness_telemetry") {
       renderFairness(event);
-    } else if (event.name === "buzz_confirmed") {
-      showToast("Buzz confirmed for " + (event.team || "team") + ".", false);
-    } else if (event.name === "buzz_cleared") {
-      showToast("Active buzz cleared.", false);
+    } else if (name === "buzz_confirmed") {
+      showToast("Buzz confirmed: " + (event.team || "team"), false);
+    } else if (name === "sudden_death_started" || name === "buzzer_battle_started") {
+      showToast("⚡ " + (name === "sudden_death_started" ? "SUDDEN DEATH" : "BUZZER BATTLE") + " — Buzzers armed!", false);
     }
+  }
+
+  function flashBuzzWinner(teamId) {
+    var match  = (latestState && latestState.current_match) || {};
+    var side   = teamId === match.team_a_id ? "A" : (teamId === match.team_b_id ? "B" : null);
+    if (!side) return;
+
+    var opp = side === "A" ? "B" : "A";
+    var card    = document.getElementById("teamCard" + side);
+    var buzzBadge = document.getElementById("team" + side + "BuzzBadge");
+    if (card) card.classList.add("buzz-winner");
+    if (buzzBadge) buzzBadge.classList.remove("hidden");
+
+    setTimeout(function () {
+      if (card) card.classList.remove("buzz-winner");
+      if (buzzBadge) buzzBadge.classList.add("hidden");
+    }, 3500);
   }
 
   function renderFairness(data) {
     var stamp = document.getElementById("buzzTimestamp");
-    if (stamp && data) {
-      stamp.textContent = "First Arrival: Team " + (data.team || "--") + " • Delta: +" + (data.delta_ms || 0) + "ms";
-    }
+    if (stamp) stamp.textContent = "Team " + (data.team || "--") + " arrived first. Delta: +" + (data.delta_ms || 0) + "ms";
   }
 
-  // ── State Renderer ───────────────────────────────────────────
+  // ── State Renderer ──────────────────────────────────────────────
   function renderState(state) {
     latestState = state || {};
 
-    var match = state.current_match || {};
-    var round = state.round || {};
-    var matrix = state.question_matrix || {};
-    var routing = state.routing || {};
-    var telemetry = state.telemetry || {};
-    var teams = state.teams || {};
+    var match   = state.current_match || {};
+    var round   = state.round || {};
+    var matrix  = state.question_matrix || {};
+    var teams   = state.teams || {};
     var buzzers = state.buzzers || {};
+    var telemetry = state.telemetry || {};
 
     var teamAId = match.team_a_id || "team_1";
     var teamBId = match.team_b_id || "team_2";
-    var teamA = teams[teamAId] || {};
-    var teamB = teams[teamBId] || {};
+    var teamA   = teams[teamAId] || {};
+    var teamB   = teams[teamBId] || {};
+    var phase   = String(round.phase || "IDLE");
 
-    // 1. Stagebar telemetry
-    var stageEl = document.getElementById("stageDisplay");
-    if (stageEl) {
-      stageEl.textContent = String(round.stage || match.stage || (state.event && state.event.stage) || "QUALIFIER").toUpperCase();
+    // ── Topbar telemetry
+    var mNum = match.match_number || 1;
+    var mStage = String(match.stage || round.stage || "QUALIFIER").toUpperCase();
+    setText("matchBadge",   "MATCH " + String(mNum).padStart(2, "0") + " • " + mStage);
+    setText("progressPill", mNum + " / " + (match.total_matches || 13));
+
+    var phasePill = document.getElementById("phasePill");
+    if (phasePill) {
+      phasePill.textContent = phase.replace(/_/g, " ");
+      phasePill.className   = "phase-pill " + phaseClass(phase);
     }
 
-    var matchEl = document.getElementById("matchDisplay");
-    if (matchEl) {
-      var mNum = match.match_number || (state.event && state.event.match_number) || 1;
-      matchEl.textContent = String(mNum).padStart(2, "0") + " / " + (match.total_matches || 13);
-    }
+    var sourcePill = document.getElementById("buzzerSourcePill");
+    if (sourcePill) sourcePill.textContent = state.buzzer_source_mode || "ESP32";
 
-    var phase = String(round.phase || "IDLE").replace(/_/g, " ").toUpperCase();
-    var phaseEl = document.getElementById("phaseDisplay");
-    if (phaseEl) phaseEl.textContent = phase;
+    // ── Workflow banner
+    updateWorkflowBanner(phase, round, buzzers, teamA, teamB, teamAId, teamBId);
 
-    // Active turn detection
-    var activeTeamId = round.active_team_id || routing.active_team_id;
-    var routingMode = routing.mode || matrix.routing_mode || round.routing_mode || "BUZZER_OPEN";
-    var turnEl = document.getElementById("activeTurnTeam");
-    if (turnEl) {
-      if (routingMode === "BUZZER_OPEN" || !activeTeamId) {
-        turnEl.textContent = "BUZZER OPEN";
-      } else if (activeTeamId === teamAId) {
-        turnEl.textContent = (teamA.name || "TEAM A").toUpperCase();
-      } else if (activeTeamId === teamBId) {
-        turnEl.textContent = (teamB.name || "TEAM B").toUpperCase();
-      } else {
-        turnEl.textContent = String(activeTeamId).toUpperCase();
+    // ── Team cards
+    var routingMode  = matrix.routing_mode || round.routing_mode || "BUZZER_OPEN";
+    var activeTeamId = round.active_team_id;
+    var isTurnA = routingMode !== "BUZZER_OPEN" && activeTeamId === teamAId;
+    var isTurnB = routingMode !== "BUZZER_OPEN" && activeTeamId === teamBId;
+
+    renderTeamCard("A", teamA, match.scores ? (match.scores[teamAId] || 0) : 0, isTurnA, matrix.team_a_correct, buzzers, teamAId, teamBId);
+    renderTeamCard("B", teamB, match.scores ? (match.scores[teamBId] || 0) : 0, isTurnB, matrix.team_b_correct, buzzers, teamAId, teamBId);
+
+    // ── Center column: timer vs buzzer radar
+    var isBuzzerPhase = (phase === "BUZZER_BATTLE" || phase === "SUDDEN_DEATH");
+    var timerPanel  = document.getElementById("timerPanel");
+    var buzzerPanel = document.getElementById("buzzerPanel");
+    if (timerPanel)  timerPanel.classList.toggle("hidden", isBuzzerPhase);
+    if (buzzerPanel) buzzerPanel.classList.toggle("hidden", !isBuzzerPhase);
+
+    if (isBuzzerPhase) {
+      renderBuzzerRadar(buzzers, teamAId, teamBId, teamA.name, teamB.name, phase);
+    } else {
+      if (typeof round.timer_seconds_remaining === "number") {
+        updateTimer(round.timer_seconds_remaining, Boolean(round.timer_running));
       }
     }
 
-    // Undo availability
-    var undoEl = document.getElementById("undoStatus");
-    var hasUndo = state.can_undo !== undefined ? state.can_undo : (state.log && state.log.length > 0);
-    if (undoEl) {
-      undoEl.textContent = hasUndo ? "AVAILABLE" : "READY";
-      undoEl.className = "stage-value " + (hasUndo ? "accent" : "ok");
-    }
-    if (btnUndo) {
-      btnUndo.disabled = state.can_undo === false;
-    }
+    // ── Verdict bar
+    updateVerdictBar(phase, buzzers);
 
-    // 2. Team Cards
-    var isTurnA = routingMode !== "BUZZER_OPEN" && activeTeamId === teamAId;
-    var isTurnB = routingMode !== "BUZZER_OPEN" && activeTeamId === teamBId;
-    renderTeamCard("A", teamA, match.scores?.[teamAId] ?? 0, isTurnA, matrix.team_a_correct);
-    renderTeamCard("B", teamB, match.scores?.[teamBId] ?? 0, isTurnB, matrix.team_b_correct);
-
-    // 3. Spoken-Only Question Matrix
+    // ── Question matrix
     renderMatrix(matrix, round, teamAId, teamBId);
 
-    // 4. Scoring button labels based on phase
-    updateScoringButtons(round.phase);
+    // ── Team quick verdicts (shown only in buzzer mode)
+    var showTeamVerdicts = isBuzzerPhase;
+    var teamARow = document.getElementById("teamAVerdictRow");
+    var teamBRow = document.getElementById("teamBVerdictRow");
+    if (teamARow) teamARow.classList.toggle("hidden", !showTeamVerdicts);
+    if (teamBRow) teamBRow.classList.toggle("hidden", !showTeamVerdicts);
 
-    // 5. Buzzer Authority Panel
-    renderBuzzerBanner(buzzers, teamAId, teamBId, teamA.name, teamB.name);
+    // ── Telemetry
+    setText("paceTelemetry",  Number(telemetry.average_seconds_per_question || 0).toFixed(2) + "s/Q");
+    setText("streakTelemetry", String(telemetry.current_streak || 0));
 
-    // 6. Match Timer
-    if (typeof round.timer_seconds_remaining === "number") {
-      updateTimer(round.timer_seconds_remaining, Boolean(round.timer_running));
-    }
-
-    // 7. Telemetry strip
-    renderTelemetry(telemetry);
-
-    // 8. Warning notice
-    if (state.question_bank_warning) {
-      showToast(state.question_bank_warning, true);
-    }
+    // ── Bank warning
+    if (state.question_bank_warning) showToast(state.question_bank_warning, true);
   }
 
-  function renderTeamCard(side, team, score, isTurn, hitsCount) {
-    var card = document.getElementById("teamCard" + side);
-    var nameEl = document.getElementById("team" + side + "Name");
-    var speakerEl = document.getElementById("team" + side + "Speaker");
-    var hitsEl = document.getElementById("team" + side + "Hits");
-    var scoreEl = document.getElementById("team" + side + "Score");
-    var turnBadge = document.getElementById("team" + side + "TurnBadge");
+  function phaseClass(phase) {
+    if (phase === "RAPID_FIRE")    return "rf";
+    if (phase === "BUZZER_BATTLE") return "bb";
+    if (phase === "SUDDEN_DEATH")  return "sd";
+    if (phase === "RESULT")        return "result";
+    return "";
+  }
+
+  // ── Workflow Banner ─────────────────────────────────────────────
+  function updateWorkflowBanner(phase, round, buzzers, teamA, teamB, teamAId, teamBId) {
+    var labelEl  = document.getElementById("workflowStepLabel");
+    var hintEl   = document.getElementById("workflowHint");
+    var btn      = document.getElementById("primaryActionBtn");
+    var iconEl   = document.getElementById("primaryActionIcon");
+    var labelBtn = document.getElementById("primaryActionLabel");
+    if (!btn) return;
+
+    var config = getBannerConfig(phase, round, buzzers, teamA, teamB, teamAId, teamBId);
+
+    if (labelEl)  labelEl.textContent  = config.step;
+    if (hintEl)   hintEl.textContent   = config.hint;
+    if (iconEl)   iconEl.textContent   = config.icon;
+    if (labelBtn) labelBtn.textContent = config.label;
+    btn.dataset.action = config.action;
+    btn.dataset.bannerTeam = config.team || "";
+    btn.className = "primary-action-btn " + (config.cls || "");
+
+    // Show/hide based on whether there's a sensible primary action
+    btn.style.display = config.action ? "" : "none";
+  }
+
+  function getBannerConfig(phase, round, buzzers, teamA, teamB, teamAId, teamBId) {
+    var nameA = (teamA.name || "Team A").toUpperCase();
+    var nameB = (teamB.name || "Team B").toUpperCase();
+
+    if (phase === "IDLE") {
+      return {
+        step: "PHASE", hint: "Start Rapid Fire for Team A to begin the match.",
+        icon: "▶", label: "START RAPID FIRE • " + nameA,
+        action: "_banner_start_rf_a", cls: "rf-mode"
+      };
+    }
+
+    if (phase === "RAPID_FIRE") {
+      var activeId = round.active_team_id;
+      var activeName = activeId === teamAId ? nameA : nameB;
+      var nextTeam   = activeId === teamAId ? "b" : "a";
+      var nextName   = nextTeam === "b" ? nameB : nameA;
+      if (round.timer_running) {
+        return {
+          step: "IN PROGRESS", hint: activeName + " rapid fire running. Press SPACE to pause.",
+          icon: "⏸", label: "PAUSE TIMER",
+          action: "pause_timer", cls: "rf-mode"
+        };
+      } else if (round.timer_seconds_remaining > 0) {
+        return {
+          step: "TIMER PAUSED", hint: activeName + " rapid fire paused. Resume or switch turn.",
+          icon: "▶", label: "RESUME TIMER",
+          action: "_banner_resume_timer", cls: "rf-mode"
+        };
+      } else {
+        return {
+          step: "RAPID FIRE DONE", hint: nameA + " done. Start " + nextName + " now, or go to Buzzer Battle.",
+          icon: "▶", label: "RAPID FIRE • " + nextName,
+          action: "_banner_start_rf_" + nextTeam, cls: "rf-mode"
+        };
+      }
+    }
+
+    if (phase === "BUZZER_BATTLE") {
+      if (!buzzers || buzzers.locked && !buzzers.first_team && !buzzers.passed_to_team) {
+        return {
+          step: "BUZZER BATTLE", hint: "Buzzers ARMED. Read the question aloud. First buzz wins.",
+          icon: "📡", label: "BUZZERS ARMED", action: "", cls: "bb-mode"
+        };
+      }
+      if (buzzers.first_team) {
+        var winName = buzzers.first_team === teamAId ? nameA : nameB;
+        return {
+          step: "BUZZ REGISTERED", hint: winName + " buzzed first. Mark their answer.",
+          icon: "⚡", label: winName + " BUZZED", action: "", cls: "bb-mode"
+        };
+      }
+      if (buzzers.passed_to_team) {
+        var passName = buzzers.passed_to_team === teamAId ? nameA : nameB;
+        return {
+          step: "STEAL WINDOW", hint: "Question passed to " + passName + ". Waiting for their buzz.",
+          icon: "🔀", label: passName + " STEAL", action: "", cls: "bb-mode"
+        };
+      }
+      return {
+        step: "BUZZER BATTLE", hint: "Open next question to continue the round.",
+        icon: "⚡", label: "OPEN QUESTION",
+        action: "open_question", cls: "bb-mode"
+      };
+    }
+
+    if (phase === "SUDDEN_DEATH") {
+      return {
+        step: "SUDDEN DEATH ⚠", hint: "Scores tied. First correct answer wins the match.",
+        icon: "💀", label: "SUDDEN DEATH ACTIVE", action: "", cls: "sd-mode"
+      };
+    }
+
+    if (phase === "RESULT") {
+      return {
+        step: "MATCH COMPLETE", hint: "Match finished. Advance to next match from Admin panel.",
+        icon: "🏆", label: "MATCH RESULT", action: "", cls: "result-mode"
+      };
+    }
+
+    return { step: "NEXT STEP", hint: "Select a phase to begin.", icon: "⚡", label: "START", action: "" };
+  }
+
+  // ── Team Card ───────────────────────────────────────────────────
+  function renderTeamCard(side, team, score, isTurn, hitsCount, buzzers, teamAId, teamBId) {
+    var card       = document.getElementById("teamCard" + side);
+    var nameEl     = document.getElementById("team" + side + "Name");
+    var speakerEl  = document.getElementById("team" + side + "Speaker");
+    var hitsEl     = document.getElementById("team" + side + "Hits");
+    var scoreEl    = document.getElementById("team" + side + "Score");
+    var turnBadge  = document.getElementById("team" + side + "TurnBadge");
+    var passedBadge = document.getElementById("team" + side + "PassedBadge");
 
     var color = team.accent_color || (side === "A" ? "#0ea5e9" : "#f97316");
-
     if (card) {
       card.style.setProperty("--team-color", color);
       card.classList.toggle("active-turn", Boolean(isTurn));
+      // Steal window highlight
+      var teamId  = side === "A" ? teamAId : (side === "B" ? teamBId : "");
+      var isSteal = buzzers && buzzers.passed_to_team && buzzers.passed_to_team === teamId;
+      card.classList.toggle("steal-window", Boolean(isSteal));
     }
-    if (nameEl) nameEl.textContent = team.name || ("TEAM " + side);
-    if (speakerEl) speakerEl.textContent = "DESIGNATED SPEAKER: " + (team.designated_speaker || "--");
-    if (hitsEl) hitsEl.textContent = "HITS: " + (hitsCount ?? (team.correct_answers || team.hits || 0));
-    if (scoreEl) scoreEl.textContent = score ?? 0;
+    if (nameEl)    nameEl.textContent    = team.name    || ("TEAM " + side);
+    if (speakerEl) speakerEl.textContent = "SPEAKER: "  + (team.designated_speaker || "--");
+    if (hitsEl)    hitsEl.textContent    = "HITS: "     + (hitsCount != null ? hitsCount : 0);
+    if (scoreEl)   scoreEl.textContent   = score != null ? score : 0;
     if (turnBadge) turnBadge.classList.toggle("hidden", !isTurn);
-  }
-
-  function updateScoringButtons(phase) {
-    var hint = document.getElementById("scoreHint");
-    if (phase === "RAPID_FIRE") {
-      if (btnCorrect) btnCorrect.textContent = "CORRECT (+10)";
-      if (btnWrong) btnWrong.textContent = "WRONG (0)";
-      if (hint) hint.textContent = "Rapid Fire Mode: +10 pts on Correct, 0 on Wrong.";
-    } else if (phase === "BUZZER_BATTLE") {
-      if (btnCorrect) btnCorrect.textContent = "CORRECT (+15)";
-      if (btnWrong) btnWrong.textContent = "WRONG (-5 & PASS)";
-      if (hint) hint.textContent = "Buzzer Battle: +15 on Correct, -5 and pass to opponent on Wrong.";
-    } else if (phase === "SUDDEN_DEATH") {
-      if (btnCorrect) btnCorrect.textContent = "CORRECT (WIN TIE-BREAKER)";
-      if (btnWrong) btnWrong.textContent = "WRONG (PASS OVER)";
-      if (hint) hint.textContent = "Sudden Death: first correct wins the match.";
-    } else {
-      if (btnCorrect) btnCorrect.textContent = "CORRECT";
-      if (btnWrong) btnWrong.textContent = "WRONG / PASS";
-      if (hint) hint.textContent = "Server validates the active scoring target.";
+    if (passedBadge) {
+      var teamId2 = side === "A" ? teamAId : teamBId;
+      passedBadge.classList.toggle("hidden", !(buzzers && buzzers.passed_to_team === teamId2));
     }
   }
 
-  function renderBuzzerBanner(buzzers, teamAId, teamBId, nameA, nameB) {
+  // ── Buzzer Radar ────────────────────────────────────────────────
+  function renderBuzzerRadar(buzzers, teamAId, teamBId, nameA, nameB, phase) {
+    var radar  = document.getElementById("radarWrap");
+    var core   = document.getElementById("radarCore");
     var banner = document.getElementById("buzzerBanner");
-    var stamp = document.getElementById("buzzTimestamp");
-    if (!banner) return;
+    var stamp  = document.getElementById("buzzTimestamp");
+    var panelLabel = document.getElementById("buzzerPanelLabel");
 
-    if (buzzers.passed_to_team) {
-      var passTarget = buzzers.passed_to_team === teamAId ? (nameA || "TEAM A") : (nameB || "TEAM B");
-      banner.textContent = "PASSED TO " + passTarget.toUpperCase();
-      banner.className = "buzzer-banner passed";
-    } else if (buzzers.first_team) {
-      var winTarget = buzzers.first_team === teamAId ? (nameA || "TEAM A") : (nameB || "TEAM B");
-      var delta = buzzers.arrival_delta_ms != null ? " (+" + buzzers.arrival_delta_ms + "ms)" : "";
-      banner.textContent = winTarget.toUpperCase() + " BUZZED FIRST" + delta;
-      banner.className = "buzzer-banner winner";
-    } else if (buzzers.locked) {
-      banner.textContent = "BUZZERS LOCKED";
-      banner.className = "buzzer-banner locked";
-    } else {
-      banner.textContent = "BUZZERS OPEN — LISTENING";
-      banner.className = "buzzer-banner open";
+    if (panelLabel) panelLabel.textContent = phase === "SUDDEN_DEATH" ? "SUDDEN DEATH" : "BUZZER BATTLE";
+
+    var radarState = "locked";
+    var bannerState = "locked";
+    var bannerText  = "BUZZERS LOCKED";
+    var coreIcon    = "🔒";
+
+    if (buzzers && buzzers.passed_to_team) {
+      var passName = buzzers.passed_to_team === teamAId ? (nameA || "Team A") : (nameB || "Team B");
+      radarState  = "passed";
+      bannerState = "passed";
+      bannerText  = "PASSED TO " + passName.toUpperCase();
+      coreIcon    = "🔀";
+    } else if (buzzers && buzzers.first_team) {
+      var winName = buzzers.first_team === teamAId ? (nameA || "Team A") : (nameB || "Team B");
+      radarState  = "won";
+      bannerState = "winner";
+      bannerText  = winName.toUpperCase() + " — BUZZED FIRST";
+      coreIcon    = "⚡";
+    } else if (buzzers && !buzzers.locked) {
+      radarState  = "open";
+      bannerState = "open";
+      bannerText  = "BUZZERS OPEN — LISTENING";
+      coreIcon    = "📡";
     }
 
-    if (stamp && buzzers.press_timestamp) {
-      stamp.textContent = "Registered Press: " + buzzers.press_timestamp;
-    } else if (stamp && !buzzers.first_team) {
+    if (radar) radar.className = "radar-wrap " + radarState;
+    if (core)  { core.className = "radar-core " + radarState; core.querySelector("span").textContent = coreIcon; }
+    if (banner) { banner.textContent = bannerText; banner.className = "buzzer-banner " + bannerState; }
+    if (stamp && buzzers && buzzers.press_timestamp) {
+      stamp.textContent = "Press: " + buzzers.press_timestamp;
+    } else if (stamp && buzzers && !buzzers.first_team) {
       stamp.textContent = "No press registered.";
     }
   }
 
+  // ── Verdict Bar ─────────────────────────────────────────────────
+  function updateVerdictBar(phase, buzzers) {
+    var hint = document.getElementById("scoreHint");
+    if (phase === "RAPID_FIRE") {
+      if (btnCorrect) btnCorrect.textContent = "✓ CORRECT (+10)";
+      if (btnWrong)   btnWrong.textContent   = "✗ WRONG (0)";
+      if (hint) hint.textContent = "Rapid Fire: +10 Correct / 0 Wrong. Auto-advances on mark.";
+    } else if (phase === "BUZZER_BATTLE") {
+      if (btnCorrect) btnCorrect.textContent = "✓ CORRECT (+15)";
+      if (btnWrong)   btnWrong.textContent   = "✗ WRONG (−5 & PASS)";
+      if (hint) hint.textContent = "Buzzer Battle: +15 Correct / −5 and pass to opponent on Wrong.";
+    } else if (phase === "SUDDEN_DEATH") {
+      if (btnCorrect) btnCorrect.textContent = "✓ CORRECT (WIN MATCH)";
+      if (btnWrong)   btnWrong.textContent   = "✗ WRONG (PASS)";
+      if (hint) hint.textContent = "Sudden Death: first correct answer wins the match!";
+    } else {
+      if (btnCorrect) btnCorrect.textContent = "✓ CORRECT";
+      if (btnWrong)   btnWrong.textContent   = "✗ WRONG";
+      if (hint) hint.textContent = "Select a phase above to begin the match.";
+    }
+
+    if (btnUndo) btnUndo.disabled = !((latestState && latestState.log && latestState.log.length > 0));
+  }
+
+  // ── Question Matrix ─────────────────────────────────────────────
   function renderMatrix(matrix, round, teamAId, teamBId) {
     var grid = document.getElementById("questionMatrix");
     if (!grid) return;
     grid.innerHTML = "";
 
-    var total = Number(matrix.total_questions) || 15;
+    var total    = Number(matrix.total_questions) || 15;
     var statuses = matrix.statuses || [];
-
     if (!Array.isArray(statuses) || !statuses.length) {
       statuses = [];
-      for (var n = 1; n <= total; n++) {
-        statuses.push({ num: n, status: "unasked", winner_side: null });
-      }
+      for (var n = 1; n <= total; n++) statuses.push({ num: n, status: "unasked", winner_side: null });
     }
 
     var currentNum = Number(matrix.current_question_num);
-    var mode = matrix.routing_mode || round.routing_mode || "BUZZER_OPEN";
+    var mode      = matrix.routing_mode || round.routing_mode || "BUZZER_OPEN";
     var startSide = matrix.turn_start_side || round.turn_start_side || "A";
     var blockSize = Number(matrix.team_block_size || round.team_block_size || 10);
-
     var asked = 0;
-    var hitsA = 0;
-    var hitsB = 0;
 
     statuses.forEach(function (item) {
-      var number = Number(item.num);
-      var status = item.status || "unasked";
+      var number     = Number(item.num);
+      var status     = item.status || "unasked";
       var winnerSide = item.winner_side;
 
-      // Calculate intended side when in team block mode
-      var blockIdx = mode === "TEAM_BLOCK" ? Math.floor((number - 1) / Math.max(1, blockSize)) : number - 1;
-      var sideIsA = (blockIdx % 2 === 0) === (String(startSide).toUpperCase() === "A");
-      var intendedSide = sideIsA ? "A" : "B";
+      var blockIdx  = mode === "TEAM_BLOCK" ? Math.floor((number - 1) / Math.max(1, blockSize)) : number - 1;
+      var sideIsA   = (blockIdx % 2 === 0) === (String(startSide).toUpperCase() === "A");
 
       var tile = document.createElement("button");
       tile.type = "button";
 
       var classes = ["question-tile"];
-      if (mode === "TEAM_BLOCK") {
-        classes.push(sideIsA ? "block-a" : "block-b");
-      }
-
-      if (number === currentNum) {
-        classes.push("current");
-      }
+      if (mode === "TEAM_BLOCK") classes.push(sideIsA ? "block-a" : "block-b");
+      if (number === currentNum) classes.push("current");
 
       if (status === "won") {
-        if (winnerSide === "A") {
-          classes.push("won-a");
-          hitsA++;
-        } else if (winnerSide === "B") {
-          classes.push("won-b");
-          hitsB++;
-        } else {
-          classes.push("won");
-        }
+        classes.push(winnerSide === "A" ? "won-a" : winnerSide === "B" ? "won-b" : "won");
       } else if (status === "dead" || status === "skipped") {
         classes.push("dead");
       } else if (status === "active") {
@@ -433,315 +541,322 @@
       }
 
       tile.className = classes.join(" ");
-
-      var label = "Q" + number;
-      if (status === "won") label += " ✓";
-      if (status === "dead" || status === "skipped") label += " ✕";
-      tile.textContent = label;
-
-      tile.title = "Item " + number + " (" + status + (winnerSide ? " by Team " + winnerSide : "") + ")";
-
-      // Clicking any tile selects/opens that question number
+      tile.textContent = "Q" + number + (status === "won" ? " ✓" : (status === "dead" ? " ✕" : ""));
+      tile.title = "Q" + number + " (" + status + (winnerSide ? " by " + winnerSide : "") + ")";
       tile.addEventListener("click", function () {
         send("select_question", { question_number: number, number: number });
       });
-
       grid.appendChild(tile);
 
       if (status !== "unasked") asked++;
     });
 
-    var qNumEl = document.getElementById("questionNumber");
-    if (qNumEl) qNumEl.textContent = currentNum ? "NOW: Q" + currentNum : "Q-";
-
-    var curStat = document.getElementById("currentStat");
-    if (curStat) curStat.textContent = currentNum ? "Q" + currentNum : "Q-";
-
-    var askedStat = document.getElementById("askedStat");
-    if (askedStat) askedStat.textContent = asked;
-
-    var remStat = document.getElementById("remainingStat");
-    if (remStat) remStat.textContent = Math.max(0, statuses.length - asked);
-
-    var aHitsEl = document.getElementById("matrixAHits");
-    if (aHitsEl) aHitsEl.textContent = matrix.team_a_correct ?? hitsA;
-
-    var bHitsEl = document.getElementById("matrixBHits");
-    if (bHitsEl) bHitsEl.textContent = matrix.team_b_correct ?? hitsB;
+    setText("questionNumber", currentNum ? "NOW: Q" + currentNum : "Q–");
+    setText("currentStat",    currentNum ? "Q" + currentNum : "Q–");
+    setText("askedStat",      String(asked));
+    setText("remainingStat",  String(Math.max(0, statuses.length - asked)));
+    setText("matrixAHits",    String(matrix.team_a_correct != null ? matrix.team_a_correct : 0));
+    setText("matrixBHits",    String(matrix.team_b_correct != null ? matrix.team_b_correct : 0));
 
     var modeBadge = document.getElementById("matrixMode");
     if (modeBadge) modeBadge.textContent = mode.replace(/_/g, " ");
   }
 
-  function renderTelemetry(telemetry) {
-    var paceEl = document.getElementById("paceTelemetry");
-    if (paceEl) {
-      paceEl.textContent = Number(telemetry.average_seconds_per_question || 0).toFixed(2) + "s/Q";
-    }
-    var streakEl = document.getElementById("streakTelemetry");
-    if (streakEl) {
-      streakEl.textContent = telemetry.current_streak || 0;
-    }
-  }
-
-  // ── High-Precision Countdown Timer (Zero Jitter, Synchronized) ───
-  function renderTimerDisplay(remaining, running) {
-    remaining = Math.max(0, remaining);
-    if (remaining === lastRenderedSeconds && running === lastRenderedRunning) {
-      return;
-    }
-    lastRenderedSeconds = remaining;
-    lastRenderedRunning = running;
-    timerIsRunning = running;
-
-    var round = (latestState && latestState.round) || {};
-    var phase = round.phase || "RAPID_FIRE";
-    var maxSeconds = phase === "BUZZER_BATTLE" || phase === "SUDDEN_DEATH" ? 30 : 120;
-    if (remaining > maxSeconds) maxSeconds = remaining;
-
-    var mins = Math.floor(remaining / 60);
-    var secs = remaining % 60;
-    var display = document.getElementById("timerDisplay");
-    if (display) {
-      display.textContent = String(mins).padStart(2, "0") + ":" + String(secs).padStart(2, "0");
-      display.className = "timer " + (remaining < 10 ? "critical" : remaining <= 30 ? "warning" : "");
-    }
-
-    var phasePill = document.getElementById("timerPhase");
-    if (phasePill) {
-      phasePill.textContent = running ? "RUNNING" : (remaining <= 0 ? "EXPIRED" : (remaining === maxSeconds ? "READY" : "PAUSED"));
-      phasePill.className = "timer-phase-pill " + (running ? "running" : (remaining <= 0 ? "expired" : (remaining === maxSeconds ? "ready" : "paused")));
-    }
-
-    var rawSecEl = document.getElementById("timerRawSec");
-    if (rawSecEl) {
-      rawSecEl.textContent = remaining + " SEC REMAINING";
-    }
-
-    var modeLabel = document.getElementById("timerModeLabel");
-    if (modeLabel) {
-      modeLabel.textContent = (phase || "MATCH").replace(/_/g, " ").toUpperCase() + " (" + maxSeconds + "s)";
-    }
-
-    var progressBar = document.getElementById("timerProgressBar");
-    if (progressBar) {
-      var pct = Math.max(0, Math.min(100, (remaining / maxSeconds) * 100));
-      progressBar.style.width = pct + "%";
-      progressBar.className = "timer-bar-fill " + (remaining < 10 ? "critical" : remaining <= 30 ? "warning" : "");
-    }
-
-    var btnStartResume = document.getElementById("btnStartResume");
-    if (btnStartResume) {
-      if (running) {
-        btnStartResume.textContent = "▶ RUNNING (SPACE TO PAUSE)";
-        btnStartResume.className = "btn btn-outline btn-timer-main";
-      } else if (remaining > 0 && remaining < maxSeconds) {
-        btnStartResume.textContent = "▶ RESUME (" + remaining + "s)";
-        btnStartResume.className = "btn btn-success btn-timer-main";
-      } else {
-        btnStartResume.textContent = "▶ START " + maxSeconds + "s TIMER";
-        btnStartResume.className = "btn btn-success btn-timer-main";
-      }
-    }
-  }
-
+  // ── Timer ───────────────────────────────────────────────────────
   function updateTimer(seconds, running) {
     seconds = Math.max(0, Number(seconds) || 0);
 
     if (!running) {
-      if (timerHandle) {
-        clearInterval(timerHandle);
-        timerHandle = null;
-      }
+      if (timerHandle) { clearInterval(timerHandle); timerHandle = null; }
       timerIsRunning = false;
-      timerEndsAt = 0;
+      timerEndsAt    = 0;
       renderTimerDisplay(seconds, false);
       return;
     }
 
     var now = Date.now();
-    var projected = timerEndsAt > 0 ? (timerEndsAt - now) / 1000 : 0;
-    // Resync only if drift is greater than 1.0s or timerEndsAt was 0 or wasn't running
-    if (!timerIsRunning || timerEndsAt === 0 || Math.abs(projected - seconds) > 1.0) {
+    // Only resync endpoint if drift > 1s or not yet running
+    if (!timerIsRunning || timerEndsAt === 0 || Math.abs(((timerEndsAt - now) / 1000) - seconds) > 1.0) {
       timerEndsAt = now + seconds * 1000;
     }
     timerIsRunning = true;
 
-    var currentRemaining = Math.max(0, Math.ceil((timerEndsAt - now) / 1000));
-    renderTimerDisplay(currentRemaining, true);
+    var current = Math.max(0, Math.ceil((timerEndsAt - now) / 1000));
+    renderTimerDisplay(current, true);
 
     if (!timerHandle) {
       timerHandle = setInterval(function () {
         if (!timerIsRunning || timerEndsAt === 0) {
-          clearInterval(timerHandle);
-          timerHandle = null;
-          return;
+          clearInterval(timerHandle); timerHandle = null; return;
         }
         var rem = Math.max(0, Math.ceil((timerEndsAt - Date.now()) / 1000));
         renderTimerDisplay(rem, true);
         if (rem <= 0) {
-          clearInterval(timerHandle);
-          timerHandle = null;
-          timerIsRunning = false;
+          clearInterval(timerHandle); timerHandle = null; timerIsRunning = false;
           renderTimerDisplay(0, false);
         }
       }, 100);
     }
   }
 
-  // ── Action Payload Builder ───────────────────────────────────
+  function renderTimerDisplay(remaining, running) {
+    remaining = Math.max(0, remaining);
+    if (remaining === lastRenderedSec && running === lastRenderedRunning) return;
+    lastRenderedSec = remaining;
+    lastRenderedRunning = running;
+
+    var round      = (latestState && latestState.round) || {};
+    var phase      = round.phase || "RAPID_FIRE";
+    var maxSeconds = (phase === "BUZZER_BATTLE" || phase === "SUDDEN_DEATH") ? 30 : 120;
+    if (remaining > maxSeconds) maxSeconds = remaining;
+
+    var mins = Math.floor(remaining / 60);
+    var secs = remaining % 60;
+    var timeStr = String(mins).padStart(2, "0") + ":" + String(secs).padStart(2, "0");
+
+    var timerClass = remaining < 10 ? "critical" : remaining <= 30 ? "warning" : "";
+
+    setText("timerDisplay", timeStr);
+    var display = document.getElementById("timerDisplay");
+    if (display) display.className = "timer-digits " + timerClass;
+
+    setText("timerRawSec", remaining + " SEC");
+
+    var phasePill = document.getElementById("timerPhase");
+    if (phasePill) {
+      phasePill.textContent = running ? "RUNNING" : (remaining <= 0 ? "EXPIRED" : (remaining === maxSeconds ? "READY" : "PAUSED"));
+      phasePill.className   = "timer-state-pill " + (running ? "running" : (remaining <= 0 ? "expired" : (remaining === maxSeconds ? "ready" : "paused")));
+    }
+
+    // Ring fill (SVG arc)
+    var ringFill = document.getElementById("ringFill");
+    if (ringFill) {
+      var pct    = maxSeconds > 0 ? (remaining / maxSeconds) : 0;
+      var offset = RING_CIRC * (1 - Math.max(0, Math.min(1, pct)));
+      ringFill.style.strokeDashoffset = offset;
+      ringFill.className = "ring-fill " + timerClass;
+    }
+
+    // Start/Resume button
+    var btnSR = document.getElementById("btnStartResume");
+    if (btnSR) {
+      if (running) {
+        btnSR.textContent = "▶ RUNNING...";
+        btnSR.className   = "btn btn-outline btn-timer-main";
+      } else if (remaining > 0 && remaining < maxSeconds) {
+        btnSR.textContent = "▶ RESUME (" + remaining + "s)";
+        btnSR.className   = "btn btn-success btn-timer-main";
+      } else {
+        btnSR.textContent = "▶ START " + maxSeconds + "s";
+        btnSR.className   = "btn btn-success btn-timer-main";
+      }
+    }
+  }
+
+  // ── Payload Builder ─────────────────────────────────────────────
   function getPayload(action, button) {
-    var match = latestState.current_match || {};
+    var match  = latestState.current_match || {};
     var teamAId = match.team_a_id || "team_1";
     var teamBId = match.team_b_id || "team_2";
 
     if (action === "set_total_questions") {
-      var totalInput = document.getElementById("totalQuestions");
-      return { total_questions: Number(totalInput ? totalInput.value : 15) };
+      var inp = document.getElementById("totalQuestions");
+      return { total_questions: Number(inp ? inp.value : 15) };
     }
 
     if (action === "configure_routing") {
-      var modeEl = document.getElementById("routingMode");
-      var startEl = document.getElementById("routingStart");
-      var blockEl = document.getElementById("blockSize");
       return {
-        mode: modeEl ? modeEl.value : "AUTO_ALTERNATE",
-        start_side: startEl ? startEl.value : "A",
-        block_size: Number(blockEl ? blockEl.value : 10)
+        mode:       (document.getElementById("routingMode")  || {}).value || "AUTO_ALTERNATE",
+        start_side: (document.getElementById("routingStart") || {}).value || "A",
+        block_size:  Number((document.getElementById("blockSize") || { value: 10 }).value)
       };
     }
 
-    if (action === "switch_turn") {
-      return { reset_seconds: 120 };
-    }
+    if (action === "switch_turn")    return { reset_seconds: 120 };
 
     if (action === "start_rapid_fire") {
-      var teamSide = button ? button.dataset.team : "a";
-      return {
-        team_id: teamSide === "b" ? teamBId : teamAId,
-        duration_seconds: 120
-      };
+      var side = button ? button.dataset.team : "a";
+      return { team_id: side === "b" ? teamBId : teamAId, duration_seconds: 120 };
     }
 
     if (action === "warning_logged" || action === "foul_penalty") {
       var side = button ? button.dataset.team : "a";
-      var reasonSelect = document.getElementById("violationReason");
-      return {
-        team_id: side === "b" ? teamBId : teamAId,
-        violation: reasonSelect ? reasonSelect.value : "General Violation"
-      };
+      var reason = (document.getElementById("violationReason") || {}).value || "General Violation";
+      return { team_id: side === "b" ? teamBId : teamAId, violation: reason };
     }
 
     if (action === "confirm_first_buzz") {
       var target = button ? button.dataset.team : "";
       if (target === "clear") return { team_id: "clear" };
-      if (target === "a") return { team_id: teamAId };
-      if (target === "b") return { team_id: teamBId };
+      if (target === "a")     return { team_id: teamAId };
+      if (target === "b")     return { team_id: teamBId };
       return {};
     }
 
-    if (action === "start_timer") {
-      return { seconds: 120 };
-    }
-
-    if (action === "reset_timer") {
-      return { seconds: 120 };
-    }
-
     if (action === "mark_correct" || action === "mark_wrong") {
-      // Find designated target team if in Rapid Fire or Buzzer Battle
-      var round = latestState.round || {};
+      var round   = latestState.round || {};
       var buzzers = latestState.buzzers || {};
+      var teamSide = button ? button.dataset.teamSide : null;
       var targetTeam = null;
 
-      if (round.phase === "RAPID_FIRE") {
+      if (teamSide === "a") targetTeam = teamAId;
+      else if (teamSide === "b") targetTeam = teamBId;
+      else if (round.phase === "RAPID_FIRE") {
         targetTeam = round.active_team_id || teamAId;
-      } else if (buzzers.first_team || buzzers.passed_to_team) {
+      } else if (buzzers.passed_to_team || buzzers.first_team) {
         targetTeam = buzzers.passed_to_team || buzzers.first_team;
       }
-
       return targetTeam ? { team_id: targetTeam } : {};
     }
 
     return {};
   }
 
-  // ── Click Action Dispatcher ──────────────────────────────────
-  document.querySelectorAll("[data-action]").forEach(function (button) {
-    button.addEventListener("click", function () {
-      var action = button.dataset.action;
-      if (!action) return;
+  // ── Click Dispatcher ────────────────────────────────────────────
+  document.addEventListener("click", function (e) {
+    var button = e.target.closest("[data-action]");
+    if (!button) return;
+    var action = button.dataset.action;
+    if (!action) return;
 
-      if (action === "end_match" && !window.confirm("Are you sure you want to END the match and reveal results?")) {
-        return;
-      }
+    // Confirm dialogs
+    if (action === "end_match" && !window.confirm("End the match and reveal results?")) return;
+    if (action === "reset_question_matrix" && !window.confirm("Reset all matrix statuses?")) return;
 
-      if (action === "reset_question_matrix" && !window.confirm("Reset all question matrix statuses to unasked?")) {
-        return;
-      }
+    // ── Banner virtual actions
+    if (action === "_banner_start_rf_a") {
+      var match = latestState.current_match || {};
+      send("start_rapid_fire", { team_id: match.team_a_id || "team_1", duration_seconds: 120 });
+      return;
+    }
+    if (action === "_banner_start_rf_b") {
+      var match = latestState.current_match || {};
+      send("start_rapid_fire", { team_id: match.team_b_id || "team_2", duration_seconds: 120 });
+      return;
+    }
+    if (action === "_banner_resume_timer") {
+      send("resume_timer");
+      return;
+    }
 
-      if (action === "start_timer") {
-        var round = (latestState && latestState.round) || {};
-        if (round.timer_running) {
-          return;
-        }
-        if (round.timer_seconds_remaining > 0) {
-          send("resume_timer");
-          return;
-        }
-        var maxSec = round.phase === "BUZZER_BATTLE" || round.phase === "SUDDEN_DEATH" ? 30 : 120;
+    // ── Timer controls
+    if (action === "start_timer") {
+      var round = (latestState && latestState.round) || {};
+      if (round.timer_running) return;
+      if (round.timer_seconds_remaining > 0) {
+        send("resume_timer");
+      } else {
+        var maxSec = (round.phase === "BUZZER_BATTLE" || round.phase === "SUDDEN_DEATH") ? 30 : 120;
         send("start_timer", { seconds: maxSec });
-        return;
       }
+      return;
+    }
 
-      if (action === "reset_timer") {
-        var round = (latestState && latestState.round) || {};
-        var maxSec = round.phase === "BUZZER_BATTLE" || round.phase === "SUDDEN_DEATH" ? 30 : 120;
-        send("reset_timer", { seconds: maxSec });
-        return;
+    if (action === "reset_timer") {
+      var round = (latestState && latestState.round) || {};
+      var maxSec = (round.phase === "BUZZER_BATTLE" || round.phase === "SUDDEN_DEATH") ? 30 : 120;
+      send("reset_timer", { seconds: maxSec });
+      return;
+    }
+
+    if (action === "set_timer_preset") {
+      var sec = Number(button.dataset.seconds) || 120;
+      send("reset_timer", { seconds: sec });
+      return;
+    }
+
+    if (action === "adjust_timer_delta") {
+      var exactSec = button.dataset.seconds;
+      if (exactSec !== undefined && exactSec !== null && exactSec !== "") {
+        send("adjust_timer", { seconds: Number(exactSec) });
+      } else {
+        send("adjust_timer", { delta_seconds: Number(button.dataset.delta) || 0 });
       }
+      return;
+    }
 
-      if (action === "set_timer_preset") {
-        var sec = Number(button ? button.dataset.seconds : 120) || 120;
-        send("reset_timer", { seconds: sec });
-        return;
-      }
-
-      if (action === "adjust_timer_delta") {
-        var delta = button ? button.dataset.delta : null;
-        var exactSec = button ? button.dataset.seconds : null;
-        if (exactSec !== undefined && exactSec !== null) {
-          send("adjust_timer", { seconds: Number(exactSec) });
-        } else {
-          send("adjust_timer", { delta_seconds: Number(delta) || 0 });
-        }
-        return;
-      }
-
-      send(action, getPayload(action, button));
-    });
+    send(action, getPayload(action, button));
   });
 
-  // ── Auth Form Handlers ───────────────────────────────────────
-  pinForm.addEventListener("submit", function (event) {
-    event.preventDefault();
-    var enteredPin = (pinInput.value || "").trim();
-    if (!enteredPin) return;
+  // ── Keyboard Shortcuts ──────────────────────────────────────────
+  document.addEventListener("keydown", function (e) {
+    if (!shortcutsToggle || !shortcutsToggle.checked) return;
+    var tag = (document.activeElement && document.activeElement.tagName) || "";
+    if (/input|select|textarea/i.test(tag)) return;
 
-    api("/api/moderator/auth", {
-      method: "POST",
-      body: JSON.stringify({ pin: enteredPin })
-    })
-      .then(function (response) {
-        if (!response.ok) throw new Error("Invalid Moderator PIN");
-        pin = enteredPin;
+    var code = e.code;
+    var key  = (e.key || "").toLowerCase();
+
+    if (code === "Space") {
+      e.preventDefault();
+      var round = (latestState && latestState.round) || {};
+      if (round.timer_running) {
+        send("pause_timer");
+      } else if (round.timer_seconds_remaining > 0) {
+        send("resume_timer");
+      } else {
+        var maxSec = (round.phase === "BUZZER_BATTLE" || round.phase === "SUDDEN_DEATH") ? 30 : 120;
+        send("start_timer", { seconds: maxSec });
+      }
+    } else if (key === "c") {
+      e.preventDefault();
+      send("mark_correct", getPayload("mark_correct"));
+    } else if (key === "w") {
+      e.preventDefault();
+      send("mark_wrong", getPayload("mark_wrong"));
+    } else if (key === "n") {
+      e.preventDefault();
+      send("next_question");
+    } else if (key === "z") {
+      e.preventDefault();
+      send("undo_last_action");
+    } else if (key === "m") {
+      e.preventDefault();
+      toggleSfxMute();
+    }
+  });
+
+  // ── SFX Mute Toggle ─────────────────────────────────────────────
+  var sfxMuteBtn = document.getElementById("sfxMuteBtn");
+  function syncSfxMuteBtn() {
+    if (!sfxMuteBtn || !window.QuizBuzzerSFX) return;
+    var muted = window.QuizBuzzerSFX.isMuted();
+    sfxMuteBtn.innerHTML = muted ? "&#128263; SFX MUTED" : "&#128266; SFX ON";
+    sfxMuteBtn.classList.toggle("muted", muted);
+  }
+  function toggleSfxMute() {
+    if (!window.QuizBuzzerSFX) return;
+    window.QuizBuzzerSFX.unlock();
+    var nextMuted = !window.QuizBuzzerSFX.isMuted();
+    window.QuizBuzzerSFX.setMuted(nextMuted);
+    syncSfxMuteBtn();
+    if (!nextMuted) window.QuizBuzzerSFX.playArmReset();
+  }
+  if (sfxMuteBtn) {
+    syncSfxMuteBtn();
+    sfxMuteBtn.addEventListener("click", toggleSfxMute);
+  }
+
+  // ── Utility ─────────────────────────────────────────────────────
+  function setText(id, text) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = text;
+  }
+
+  // ── Auth Form ───────────────────────────────────────────────────
+  pinForm.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var entered = (pinInput.value || "").trim();
+    if (!entered) return;
+    api("/api/moderator/auth", { method: "POST", body: JSON.stringify({ pin: entered }) })
+      .then(function (r) {
+        if (!r.ok) throw new Error("Invalid Moderator PIN");
+        pin = entered;
         sessionStorage.setItem("moderator_pin", pin);
         pinError.textContent = "";
         setAuthenticated(true);
       })
-      .catch(function (error) {
-        pinError.textContent = error.message;
-      });
+      .catch(function (err) { pinError.textContent = err.message; });
   });
 
   var logoutBtn = document.getElementById("logout");
@@ -755,54 +870,14 @@
     });
   }
 
-  // ── Keyboard Shortcuts (Space, C, W, N, Z) ───────────────────
-  document.addEventListener("keydown", function (event) {
-    if (!shortcutsToggle || !shortcutsToggle.checked) return;
-
-    // Strict input-focus guard: don't trigger shortcuts when typing in inputs
-    var activeTag = (document.activeElement && document.activeElement.tagName) || "";
-    if (/input|select|textarea/i.test(activeTag)) return;
-
-    var code = event.code;
-    var key = (event.key || "").toLowerCase();
-
-    if (code === "Space") {
-      event.preventDefault();
-      var round = (latestState && latestState.round) || {};
-      if (round.timer_running) {
-        send("pause_timer");
-      } else if (round.timer_seconds_remaining > 0) {
-        send("resume_timer");
-      } else {
-        send("start_timer", { seconds: 120 });
-      }
-    } else if (key === "c") {
-      event.preventDefault();
-      send("mark_correct", getPayload("mark_correct"));
-    } else if (key === "w") {
-      event.preventDefault();
-      send("mark_wrong", getPayload("mark_wrong"));
-    } else if (key === "n") {
-      event.preventDefault();
-      send("next_question");
-    } else if (key === "z") {
-      event.preventDefault();
-      send("undo_last_action");
-    }
-  });
-
-  // ── Initialization & Auto-Session Check ──────────────────────
+  // ── Init: render empty matrix, check session ─────────────────────
   renderMatrix(
     { total_questions: 15, routing_mode: "BUZZER_OPEN", turn_start_side: "A", team_block_size: 10 },
-    {},
-    "team_1",
-    "team_2"
+    {}, "team_1", "team_2"
   );
 
   api("/api/moderator/session")
-    .then(function (response) {
-      return response.json();
-    })
+    .then(function (r) { return r.json(); })
     .then(function (result) {
       if (result && result.authenticated) {
         if (!pin) pin = "1111";
@@ -814,7 +889,6 @@
         setAuthenticated(false);
       }
     })
-    .catch(function () {
-      setAuthenticated(Boolean(pin));
-    });
+    .catch(function () { setAuthenticated(Boolean(pin)); });
+
 })();

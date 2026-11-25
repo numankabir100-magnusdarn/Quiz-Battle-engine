@@ -550,8 +550,12 @@
     // Attach advance match listener
     document.querySelectorAll("[data-advance-match]").forEach(function (btn) {
       btn.addEventListener("click", function () {
-        if (!window.confirm("Advance the active match and record winner?")) return;
-        send("end_match", {}, "Admin advanced match");
+        var mNum = Number(btn.dataset.advanceMatch);
+        var winnerId = btn.dataset.winnerId || null;
+        if (!window.confirm("Advance the winner of M" + String(mNum).padStart(2, "0") + " to the next round?")) return;
+        var payload = { match_number: mNum };
+        if (winnerId) payload.winner_id = winnerId;
+        send("advance_winner", payload, "Admin advanced winner for M" + mNum);
       });
     });
   }

@@ -85,9 +85,14 @@
   let bracketPaint = 0;
 
   try {
-    soundOn = window.localStorage.getItem("ebb-display-sound") === "1";
+    const savedDisplaySound = window.localStorage.getItem("ebb-display-sound");
+    if (savedDisplaySound === null) {
+      soundOn = window.QuizBuzzerSFX ? !window.QuizBuzzerSFX.isMuted() : true;
+    } else {
+      soundOn = savedDisplaySound === "1";
+    }
   } catch (error) {
-    soundOn = false;
+    soundOn = window.QuizBuzzerSFX ? !window.QuizBuzzerSFX.isMuted() : true;
   }
 
   function fit() {
@@ -264,6 +269,11 @@
   }
 
   function playBuzz() {
+    if (!soundOn) return;
+    if (window.QuizBuzzerSFX) {
+      window.QuizBuzzerSFX.playRealBuzzer("STAGE");
+      return;
+    }
     tone(880, 0.08, "square", 0.04, 0);
     tone(1320, 0.12, "square", 0.035, 0.07);
   }
@@ -279,6 +289,10 @@
 
   function setSound(next) {
     soundOn = next;
+    if (window.QuizBuzzerSFX) {
+      window.QuizBuzzerSFX.setMuted(!soundOn);
+      if (soundOn) window.QuizBuzzerSFX.unlock();
+    }
     if (ui.soundInd) {
       ui.soundInd.textContent = soundOn ? "M · SND" : "M · MUTE";
       ui.soundInd.classList.toggle("on", soundOn);
@@ -324,18 +338,14 @@
     let undoPlayed = false;
     ["A", "B"].forEach((side) => {
       const el = sides[side].score;
-      if (!scoreReady) {
-        el.textContent = String(next[side]);
-        el.dataset.value = String(next[side]);
-        return;
-      }
+      el.textContent = String(next[side]);
+      el.dataset.value = String(next[side]);
+      if (!scoreReady) return;
       if (next[side] === prevScores[side]) return;
       const delta = next[side] - prevScores[side];
       const kind = undo ? "undo" : delta > 0 ? "up" : "down";
       const label = undo ? "UNDO" : `${delta > 0 ? "+" : ""}${delta}`;
       spawnDelta(sides[side].delta, label, kind);
-      el.textContent = String(next[side]);
-      el.dataset.value = String(next[side]);
       if (undo) {
         if (!undoPlayed) playUndo();
         undoPlayed = true;

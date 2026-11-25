@@ -162,6 +162,32 @@ button, input { font-family: inherit; }
 .bug-right { justify-content: flex-end; }
 .bug-center { display: flex; align-items: center; gap: 12px; }
 
+.link-status, .sound-ind {
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--glass);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+.link-status i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #64748b;
+}
+.link-status.live i { background: var(--emerald); }
+.link-status.partial i { background: var(--orange); }
+.link-status.offline i { background: #f87171; }
+.sound-ind.on { color: var(--emerald); border-color: rgba(52, 211, 153, 0.45); }
+
 .mark {
   width: 34px;
   height: 34px;
