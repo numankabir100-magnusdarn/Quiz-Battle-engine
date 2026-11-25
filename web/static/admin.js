@@ -507,14 +507,23 @@
       '</div>';
     }
 
-    if (bracketQualifiers) {
-      bracketQualifiers.innerHTML = matches.filter(function (m) { return m.match_number >= 1 && m.match_number <= 6; }).map(renderMatchCard).join("");
+    if (bracketLeftQual) {
+      bracketLeftQual.innerHTML = matches.filter(function (m) { return m.match_number >= 1 && m.match_number <= 3; }).map(renderMatchCard).join("");
     }
-    if (bracketQuarterfinals) {
-      bracketQuarterfinals.innerHTML = matches.filter(function (m) { return m.match_number >= 7 && m.match_number <= 10; }).map(renderMatchCard).join("");
+    if (bracketLeftQf) {
+      bracketLeftQf.innerHTML = matches.filter(function (m) { return m.match_number >= 7 && m.match_number <= 8; }).map(renderMatchCard).join("");
     }
-    if (bracketSemifinals) {
-      bracketSemifinals.innerHTML = matches.filter(function (m) { return m.match_number >= 11 && m.match_number <= 12; }).map(renderMatchCard).join("");
+    if (bracketLeftSf) {
+      bracketLeftSf.innerHTML = matches.filter(function (m) { return m.match_number === 11; }).map(renderMatchCard).join("");
+    }
+    if (bracketRightQual) {
+      bracketRightQual.innerHTML = matches.filter(function (m) { return m.match_number >= 4 && m.match_number <= 6; }).map(renderMatchCard).join("");
+    }
+    if (bracketRightQf) {
+      bracketRightQf.innerHTML = matches.filter(function (m) { return m.match_number >= 9 && m.match_number <= 10; }).map(renderMatchCard).join("");
+    }
+    if (bracketRightSf) {
+      bracketRightSf.innerHTML = matches.filter(function (m) { return m.match_number === 12; }).map(renderMatchCard).join("");
     }
     if (bracketFinal) {
       bracketFinal.innerHTML = matches.filter(function (m) { return m.match_number === 13; }).map(renderMatchCard).join("");
@@ -730,6 +739,14 @@
   teamSelect.addEventListener("change", function () {
     loadTeamToEditor(teamSelect.value);
   });
+
+  if (rosterList) {
+    rosterList.addEventListener("click", function (event) {
+      var ledgerBtn = event.target.closest("[data-ledger]");
+      if (ledgerBtn) openLedger(ledgerBtn.dataset.ledger);
+    });
+  }
+  if (ledgerClose) ledgerClose.addEventListener("click", closeLedger);
 
   member1Input.addEventListener("input", function () { updateSpeakerOptions(speakerSelect.value); });
   member2Input.addEventListener("input", function () { updateSpeakerOptions(speakerSelect.value); });

@@ -291,43 +291,6 @@
     if (soundOn) tone(660, 0.08, "sine", 0.04, 0);
   }
 
-  function tweenScore(el, next) {
-    const from = Number(el.dataset.value || el.textContent) || 0;
-    const target = Number(next) || 0;
-    el.dataset.value = String(target);
-    if (from === target) {
-      el.textContent = String(target);
-      return;
-    }
-    const proxy = { value: from };
-    const write = () => {
-      el.textContent = String(Math.round(proxy.value));
-    };
-    if (window.anime) {
-      window.anime({
-        targets: proxy,
-        value: target,
-        duration: 700,
-        easing: "easeOutCubic",
-        update: write,
-        complete: () => {
-          el.textContent = String(target);
-        }
-      });
-      return;
-    }
-    const start = performance.now();
-    const step = (now) => {
-      const t = Math.min(1, (now - start) / 700);
-      const eased = 1 - ((1 - t) ** 3);
-      proxy.value = from + (target - from) * eased;
-      write();
-      if (t < 1) requestAnimationFrame(step);
-      else el.textContent = String(target);
-    };
-    requestAnimationFrame(step);
-  }
-
   function spawnDelta(anchor, text, kind) {
     const pill = document.createElement("div");
     pill.className = `delta ${kind}`;
@@ -371,7 +334,8 @@
       const kind = undo ? "undo" : delta > 0 ? "up" : "down";
       const label = undo ? "UNDO" : `${delta > 0 ? "+" : ""}${delta}`;
       spawnDelta(sides[side].delta, label, kind);
-      tweenScore(el, next[side]);
+      el.textContent = String(next[side]);
+      el.dataset.value = String(next[side]);
       if (undo) {
         if (!undoPlayed) playUndo();
         undoPlayed = true;

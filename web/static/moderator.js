@@ -28,6 +28,7 @@
   var timerEndsAt = 0;
   var timerIsRunning = false;
   var lastRenderedSeconds = -1;
+  var lastRenderedRunning = false;
   var autoAdvanceTimer = null;
   var toastTimer = null;
 
@@ -486,10 +487,11 @@
   // ── High-Precision Countdown Timer (Zero Jitter, Synchronized) ───
   function renderTimerDisplay(remaining, running) {
     remaining = Math.max(0, remaining);
-    if (remaining === lastRenderedSeconds && running === timerIsRunning) {
+    if (remaining === lastRenderedSeconds && running === lastRenderedRunning) {
       return;
     }
     lastRenderedSeconds = remaining;
+    lastRenderedRunning = running;
     timerIsRunning = running;
 
     var round = (latestState && latestState.round) || {};
@@ -581,6 +583,7 @@
           clearInterval(timerHandle);
           timerHandle = null;
           timerIsRunning = false;
+          renderTimerDisplay(0, false);
         }
       }, 100);
     }
