@@ -40,13 +40,13 @@ def test_server_arrival_order_and_fairness_delta():
         buzzer_a.send_json({"type": "buzz", "client_time": 1000})
         first = wait_for(buzzer_a, "action_ack")
         assert first["success"] is True
-        assert first["result"]["team_id"] == "team_1"
+        assert first["result"]["team_id"] == "T01"
         assert first["result"]["arrival_timestamp_ms"] is not None
         buzzer_b.send_json({"type": "action", "action": "buzz", "payload": {}, "reason": "Phase 3 test"})
         rejected = wait_for(buzzer_b, "error")
         assert "already buzzed first" in rejected["message"] or "locked" in rejected["message"]
     state = client.get("/api/state").json()
-    assert state["buzzers"]["first_team"] == "team_1"
+    assert state["buzzers"]["first_team"] == "T01"
 
 
 def test_wrong_answer_passes_only_to_opponent():
@@ -60,10 +60,10 @@ def test_wrong_answer_passes_only_to_opponent():
         action(buzzer_a, "buzz")
     with client.websocket_connect("/ws") as moderator:
         hello(moderator, "moderator", "1111")
-        result = action(moderator, "mark_wrong", {"team_id": "team_1"})
-        assert result["result"]["passed_to"] == "team_2"
+        result = action(moderator, "mark_wrong", {"team_id": "T01"})
+        assert result["result"]["passed_to"] == "T02"
     state = client.get("/api/state").json()
-    assert state["buzzers"]["passed_to_team"] == "team_2"
+    assert state["buzzers"]["passed_to_team"] == "T02"
     assert state["buzzers"]["locked"] is False
 
 

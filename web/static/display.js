@@ -44,7 +44,9 @@
       streak: $("streakA"),
       ready: $("readyA"),
       delta: $("deltaA"),
-      kicker: $("kickerA")
+      kicker: $("kickerA"),
+      members: $("membersA"),
+      total: $("totalA")
     },
     B: {
       wing: $("wingB"),
@@ -55,7 +57,9 @@
       streak: $("streakB"),
       ready: $("readyB"),
       delta: $("deltaB"),
-      kicker: $("kickerB")
+      kicker: $("kickerB"),
+      members: $("membersB"),
+      total: $("totalB")
     }
   };
 
@@ -85,9 +89,14 @@
   let bracketPaint = 0;
 
   try {
-    soundOn = window.localStorage.getItem("ebb-display-sound") === "1";
+    const savedDisplaySound = window.localStorage.getItem("ebb-display-sound");
+    if (savedDisplaySound === null) {
+      soundOn = window.QuizBuzzerSFX ? !window.QuizBuzzerSFX.isMuted() : true;
+    } else {
+      soundOn = savedDisplaySound === "1";
+    }
   } catch (error) {
-    soundOn = false;
+    soundOn = window.QuizBuzzerSFX ? !window.QuizBuzzerSFX.isMuted() : true;
   }
 
   function fit() {
@@ -109,9 +118,56 @@
     return (team && team.name) || fallback;
   }
 
+  function memberLabel(member) {
+    if (member && typeof member === "object") {
+      return String(member.name || member.full_name || "").trim();
+    }
+    return String(member == null ? "" : member).trim();
+  }
+
+  function teamMembers(team) {
+    if (!team) return [];
+    const raw = Array.isArray(team.members) && team.members.length
+      ? team.members
+      : [team.speaker_1, team.speaker_2, team.designated_speaker];
+    const seen = new Set();
+    const out = [];
+    raw.map(memberLabel).filter(Boolean).forEach((name) => {
+      const key = name.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push(name);
+    });
+    return out;
+  }
+
+  function escHtml(value) {
+    return String(value == null ? "" : value).replace(/[&<>"']/g, (char) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[char]));
+  }
+
+  function formatCardMembers(team) {
+    const members = teamMembers(team);
+    if (!members.length) return '<span class="mem-empty">—</span>';
+    const speaker = team && team.designated_speaker
+      ? String(team.designated_speaker).trim().toLowerCase()
+      : "";
+    const solo = members.length === 1;
+    return members.map((name) => {
+      const isSpeaker = speaker && name.toLowerCase() === speaker;
+      const label = solo
+        ? `${escHtml(name)} <em class="mem-solo">(SOLO)</em>`
+        : escHtml(name);
+      return isSpeaker ? `<b class="mem-speaker">${label}</b>` : label;
+    }).join(' <span class="mem-sep">•</span> ');
+  }
+
   function speakerOf(id) {
     const team = teamById(id);
-    return (team && team.designated_speaker) || "—";
+    if (!team || !team.designated_speaker) return "—";
+    const members = teamMembers(team);
+    return members.length === 1 ? `${team.designated_speaker} (Solo)` : team.designated_speaker;
   }
 
   function phaseOf(snapshot) {
@@ -148,6 +204,29 @@
     if (!teamId || !snapshot || !snapshot.current_match || !snapshot.current_match.scores) return 0;
     const value = snapshot.current_match.scores[teamId];
     return Number.isFinite(Number(value)) ? Number(value) : 0;
+  }
+
+  function sectionScore(snapshot, teamId) {
+    const match = (snapshot && snapshot.current_match) || {};
+    const stats = (match.stats && teamId && match.stats[teamId]) || null;
+    if (!stats) return 0;
+    const phase = phaseOf(snapshot);
+    if (phase === "RAPID_FIRE") return Number(stats.rapid_fire_points) || 0;
+    if (phase === "BUZZER_BATTLE" || phase === "SUDDEN_DEATH") return Number(stats.buzzer_points) || 0;
+    return 0;
+  }
+
+  function totalOf(snapshot, teamId) {
+    const match = (snapshot && snapshot.current_match) || {};
+    const stats = (match.stats && teamId && match.stats[teamId]) || null;
+    const recorded = match.scores && teamId ? match.scores[teamId] : undefined;
+    if (recorded !== undefined && recorded !== null && Number.isFinite(Number(recorded))) {
+      return Number(recorded);
+    }
+    if (stats) {
+      return (Number(stats.rapid_fire_points) || 0) + (Number(stats.buzzer_points) || 0);
+    }
+    return scoreOf(snapshot, teamId);
   }
 
   function viewFor(snapshot) {
@@ -264,6 +343,11 @@
   }
 
   function playBuzz() {
+    if (!soundOn) return;
+    if (window.QuizBuzzerSFX) {
+      window.QuizBuzzerSFX.playRealBuzzer("STAGE");
+      return;
+    }
     tone(880, 0.08, "square", 0.04, 0);
     tone(1320, 0.12, "square", 0.035, 0.07);
   }
@@ -279,6 +363,10 @@
 
   function setSound(next) {
     soundOn = next;
+    if (window.QuizBuzzerSFX) {
+      window.QuizBuzzerSFX.setMuted(!soundOn);
+      if (soundOn) window.QuizBuzzerSFX.unlock();
+    }
     if (ui.soundInd) {
       ui.soundInd.textContent = soundOn ? "M · SND" : "M · MUTE";
       ui.soundInd.classList.toggle("on", soundOn);
@@ -289,43 +377,6 @@
       /* projector storage may be blocked */
     }
     if (soundOn) tone(660, 0.08, "sine", 0.04, 0);
-  }
-
-  function tweenScore(el, next) {
-    const from = Number(el.dataset.value || el.textContent) || 0;
-    const target = Number(next) || 0;
-    el.dataset.value = String(target);
-    if (from === target) {
-      el.textContent = String(target);
-      return;
-    }
-    const proxy = { value: from };
-    const write = () => {
-      el.textContent = String(Math.round(proxy.value));
-    };
-    if (window.anime) {
-      window.anime({
-        targets: proxy,
-        value: target,
-        duration: 700,
-        easing: "easeOutCubic",
-        update: write,
-        complete: () => {
-          el.textContent = String(target);
-        }
-      });
-      return;
-    }
-    const start = performance.now();
-    const step = (now) => {
-      const t = Math.min(1, (now - start) / 700);
-      const eased = 1 - ((1 - t) ** 3);
-      proxy.value = from + (target - from) * eased;
-      write();
-      if (t < 1) requestAnimationFrame(step);
-      else el.textContent = String(target);
-    };
-    requestAnimationFrame(step);
   }
 
   function spawnDelta(anchor, text, kind) {
@@ -355,23 +406,20 @@
       scoreReady = false;
       arrivals = {};
     }
-    const next = { A: scoreOf(snapshot, teamA), B: scoreOf(snapshot, teamB) };
+    const next = { A: sectionScore(snapshot, teamA), B: sectionScore(snapshot, teamB) };
     const lastLog = (snapshot.log || []).slice(-1)[0];
     const undo = lastLog && lastLog.action === "undo_last_action";
     let undoPlayed = false;
     ["A", "B"].forEach((side) => {
       const el = sides[side].score;
-      if (!scoreReady) {
-        el.textContent = String(next[side]);
-        el.dataset.value = String(next[side]);
-        return;
-      }
+      el.textContent = String(next[side]);
+      el.dataset.value = String(next[side]);
+      if (!scoreReady) return;
       if (next[side] === prevScores[side]) return;
       const delta = next[side] - prevScores[side];
       const kind = undo ? "undo" : delta > 0 ? "up" : "down";
       const label = undo ? "UNDO" : `${delta > 0 ? "+" : ""}${delta}`;
       spawnDelta(sides[side].delta, label, kind);
-      tweenScore(el, next[side]);
       if (undo) {
         if (!undoPlayed) playUndo();
         undoPlayed = true;
@@ -432,6 +480,12 @@
       sides[side].kicker.textContent = side === "A" ? "TEAM A" : "TEAM B";
       sides[side].name.textContent = teamName(id, side === "A" ? "Team A" : "Team B");
       sides[side].speaker.textContent = speakerOf(id);
+      if (sides[side].members) sides[side].members.innerHTML = formatCardMembers(teamById(id));
+      if (sides[side].total) {
+        sides[side].total.innerHTML = id
+          ? `TOTAL <b>${totalOf(snapshot, id)}</b>`
+          : "";
+      }
       const live = rapid && active && id === active;
       const waiting = rapid && active && id && id !== active;
       const status = duel ? readyState(side, id, buzzers) : "standby";
@@ -663,7 +717,8 @@
     const match = snapshot.current_match || {};
     const stageName = String(event.stage || match.stage || "Qualifier").toUpperCase();
     const number = event.match_number || match.match_number || 1;
-    ui.matchLabel.textContent = `${stageName} · MATCH ${padMatch(number)} OF 13`;
+    const totalMatches = (snapshot.tournament_progress && snapshot.tournament_progress.total_matches) || 14;
+    ui.matchLabel.textContent = `${stageName} · MATCH ${padMatch(number)} OF ${totalMatches}`;
     const phase = phaseOf(snapshot);
     const label = modeLabel(phase);
     ui.modeBadge.dataset.phase = phase === "RESULT" ? "RESULT" : phase;
@@ -691,8 +746,8 @@
   }
 
   const BRACKET_WINGS = [
-    { key: "Left", qual: [1, 2, 3], qf: [7, 8], sf: [11] },
-    { key: "Right", qual: [4, 5, 6], qf: [9, 10], sf: [12] },
+    { key: "Left", qual: [1, 2, 3, 4], qf: [8, 9], sf: [12] },
+    { key: "Right", qual: [5, 6, 7], qf: [10, 11], sf: [13] },
   ];
 
   function curve(a, b) {
@@ -733,7 +788,7 @@
     const finalRoot = $("finalMatches");
     if (finalRoot) {
       finalRoot.replaceChildren();
-      finalRoot.appendChild(matchCard(byNum[13], 13, current));
+      finalRoot.appendChild(matchCard(byNum[14], 14, current));
     }
     renderWild(snapshot, byNum);
     bracketPaint += 1;
@@ -791,7 +846,7 @@
           groups[index + 1].forEach((to) => paths.push(curve(from, to)));
         });
       }
-      const final = box(13);
+      const final = box(14);
       if (groups[2][0] && final) paths.push(curve(groups[2][0], final));
     });
     svg.setAttribute("viewBox", `0 0 ${board.clientWidth} ${board.clientHeight}`);
@@ -808,14 +863,14 @@
     const tied = new Set(bracket.wild_card_tied_teams || []);
     root.replaceChildren();
     const title = document.createElement("h3");
-    title.textContent = "TOP-2 WILD-CARD STANDINGS";
+    title.textContent = "TOP-1 WILD-CARD STANDING";
     const copy = document.createElement("p");
-    copy.textContent = "Highest-scoring qualifier runners-up advance.";
+    copy.textContent = "Highest-scoring qualifier runner-up advances.";
     const rowBox = document.createElement("div");
     rowBox.className = "wild-rows";
     root.append(title, copy, rowBox);
     const rows = [];
-    for (let num = 1; num <= 6; num += 1) {
+    for (let num = 1; num <= 7; num += 1) {
       const match = byNum[num];
       if (!match || !match.loser_id) continue;
       rows.push({
@@ -866,6 +921,11 @@
     const showChampion = Boolean(bracket.champion) && match.match_number === 13 && winnerId === bracket.champion;
     ui.crown.hidden = !showChampion;
     ui.victory.classList.toggle("is-champion", showChampion);
+    const membersNode = $("victoryMembers");
+    if (membersNode) {
+      const rosterId = showChampion ? bracket.champion : winnerId;
+      membersNode.innerHTML = rosterId ? formatCardMembers(teamById(rosterId)) : "";
+    }
     if (showChampion) {
       ui.victoryKicker.textContent = "GRAND CHAMPION";
       ui.victoryName.textContent = teamName(bracket.champion, "Champion");
@@ -883,8 +943,8 @@
     const bId = match.team_b_id;
     $("resNameA").textContent = teamName(aId, "Team A");
     $("resNameB").textContent = teamName(bId, "Team B");
-    $("resScoreA").textContent = String(scoreOf(snapshot, aId));
-    $("resScoreB").textContent = String(scoreOf(snapshot, bId));
+    $("resScoreA").textContent = String(totalOf(snapshot, aId));
+    $("resScoreB").textContent = String(totalOf(snapshot, bId));
     $("resSideA").classList.toggle("winner", Boolean(winnerId) && winnerId === aId);
     $("resSideB").classList.toggle("winner", Boolean(winnerId) && winnerId === bId);
     $("hitLabelA").textContent = `${teamName(aId, "TEAM A")} HITS`;
@@ -1047,9 +1107,14 @@
       }
     } else if (name === "timer_paused") {
       noteTimer(message.seconds_remaining ?? message.seconds ?? timerRemaining, false);
+      lastTickSpoken = null;
     } else if (name === "timer_expired") {
       noteTimer(0, false);
+      lastTickSpoken = null;
     } else if (name === "timer_reset") {
+      lastTickSpoken = null;
+    } else if (name === "buzzer_battle_started" || name === "sudden_death_started" || name === "match_ended" || name === "match_advanced" || name === "round_reset") {
+      lastTickSpoken = null;
       const seconds = message.seconds_remaining ?? message.seconds ?? 120;
       timerCeiling = Math.max(120, Number(seconds) || 120);
       noteTimer(seconds, false, timerCeiling);

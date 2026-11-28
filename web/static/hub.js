@@ -346,7 +346,7 @@
     setInterval(() => refreshEsp32Status().catch(() => {}), 3000);
     setInterval(() => fetch("/api/health").then((response) => response.json()).then((data) => {
       $("uptime").textContent = `${Math.floor(data.uptime_seconds / 60)}m ${Math.floor(data.uptime_seconds % 60)}s`;
-    }).catch(() => { $("serverStatus").textContent = "OFFLINE"; }), 3000);
+    }).catch(() => { const statusEl = $("serverStatus") || $("hubStatus"); if (statusEl) statusEl.textContent = "OFFLINE"; }), 3000);
   }
 
   async function checkSession() {

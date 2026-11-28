@@ -15,7 +15,7 @@ def test_first_buzz_race_condition():
 
     for trial in range(trials):
         engine = GameEngine(auto_init_tournament=True)
-        engine.setup_match("Qualifier", 1, "team_1", "team_2")
+        engine.setup_match("Qualifier", 1, "T01", "T02")
         engine.start_buzzer_battle()
         engine.open_question()
 
@@ -30,8 +30,8 @@ def test_first_buzz_race_condition():
                 errors.append((team_id, str(e)))
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            fut1 = executor.submit(attempt_buzz, "team_1")
-            fut2 = executor.submit(attempt_buzz, "team_2")
+            fut1 = executor.submit(attempt_buzz, "T01")
+            fut2 = executor.submit(attempt_buzz, "T02")
             fut1.result()
             fut2.result()
 
@@ -42,8 +42,8 @@ def test_first_buzz_race_condition():
 
         winning_team = results[0][0]
         losing_team = errors[0][0]
-        assert winning_team in ("team_1", "team_2")
-        assert losing_team in ("team_1", "team_2")
+        assert winning_team in ("T01", "T02")
+        assert losing_team in ("T01", "T02")
         assert winning_team != losing_team
 
         # Engine buzzers state integrity

@@ -10,7 +10,7 @@
 <body class="moderator-body">
 
   <!-- ═══════════════════════════════════════════════════════════════
-       GATE: PIN AUTH SCREEN (PIN: 1111)
+       GATE: PIN AUTH SCREEN
   ═══════════════════════════════════════════════════════════════ -->
   <section id="pinGate" class="pin-gate">
     <div class="gate-card">
@@ -25,7 +25,7 @@
           <h1 class="gate-title">MODERATOR CONSOLE</h1>
         </div>
       </div>
-      <p class="gate-desc">Enter the verified host PIN to operate the live match in real time.</p>
+      <p class="gate-desc">Enter the verified host PIN to operate the live match.</p>
       <form id="pinForm" class="gate-form">
         <label for="pinInput" class="form-label">Moderator PIN</label>
         <div class="pin-wrap">
@@ -42,321 +42,300 @@
   ═══════════════════════════════════════════════════════════════ -->
   <main id="panel" class="moderator-shell hidden">
 
-    <!-- TOP BAR -->
+    <!-- ───────────────────────────────── TOP BAR (56px) -->
     <header class="topbar">
-      <div class="topbar-brand">
-        <svg class="topbar-emblem" viewBox="0 0 48 48" fill="none">
-          <polygon points="24,2 44,13 44,35 24,46 4,35 4,13" stroke="#F97316" stroke-width="2.5" fill="rgba(249,115,22,0.12)"/>
-          <path d="M14 17 H34 V22 H20 V25 H30 V29 H20 V32 H34" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-          <circle cx="24" cy="24" r="2" fill="#F97316"/>
+      <div class="topbar-left">
+        <svg class="topbar-emblem" viewBox="0 0 36 36" fill="none">
+          <polygon points="18,2 33,10 33,26 18,34 3,26 3,10" stroke="#F97316" stroke-width="2" fill="rgba(249,115,22,0.1)"/>
+          <path d="M10 13 H26 V17 H15 V19 H22 V22 H15 V25 H26" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
-        <div>
-          <p class="eyebrow">EEECi FA'26 • EEE BRAIN BATTLE</p>
-          <h1 class="topbar-title">MODERATOR CONSOLE</h1>
+        <div class="topbar-title-block">
+          <span class="topbar-eyebrow">EEECi FA'26 • MODULE 06</span>
+          <span class="topbar-title">MODERATOR CONSOLE</span>
         </div>
       </div>
-      <div class="top-actions">
+      <div class="topbar-center">
+        <span id="matchBadge" class="match-badge">MATCH 01 • QUALIFIER</span>
+        <span id="progressPill" class="progress-pill">1 / 13</span>
+        <span id="phasePill" class="phase-pill">IDLE</span>
+      </div>
+      <div class="topbar-right">
         <div id="actionToast" class="action-toast hidden"></div>
+        <span id="buzzerSourcePill" class="source-pill">ESP32</span>
+        <button id="sfxMuteBtn" class="btn btn-outline btn-sm" title="Toggle buzzer sound (M)" style="min-width:72px;">&#128266; SFX ON</button>
         <span id="statusBanner" class="status reconnecting">CONNECTING</span>
         <span id="latencyBadge" class="latency">-- ms</span>
-        <button id="logout" class="btn btn-outline">Lock Console</button>
+        <button id="logout" class="btn btn-outline btn-sm">Lock Console</button>
       </div>
     </header>
 
-    <!-- STAGE & MATCH TELEMETRY STRIP -->
-    <section class="stagebar">
-      <div class="stage-item">
-        <span class="stage-label">STAGE</span>
-        <strong id="stageDisplay" class="stage-value">QUALIFIER</strong>
+    <!-- ───────────────────────────────── WORKFLOW BANNER (ROW 1) -->
+    <section class="workflow-banner" id="workflowBanner">
+      <div class="workflow-context" id="workflowContext">
+        <span class="workflow-step-label" id="workflowStepLabel">NEXT STEP</span>
+        <span class="workflow-hint" id="workflowHint">Select a phase to begin the match.</span>
       </div>
-      <div class="stage-item">
-        <span class="stage-label">MATCH</span>
-        <strong id="matchDisplay" class="stage-value">01 / 13</strong>
-      </div>
-      <div class="stage-item">
-        <span class="stage-label">PHASE</span>
-        <strong id="phaseDisplay" class="stage-value accent">IDLE</strong>
-      </div>
-      <div class="stage-item">
-        <span class="stage-label">ACTIVE TURN</span>
-        <strong id="activeTurnTeam" class="stage-value">BUZZER OPEN</strong>
-      </div>
-      <div class="stage-item">
-        <span class="stage-label">UNDO AVAILABILITY</span>
-        <strong id="undoStatus" class="stage-value ok">READY</strong>
-      </div>
+      <button id="primaryActionBtn" class="primary-action-btn" data-action="">
+        <span id="primaryActionIcon">⚡</span>
+        <span id="primaryActionLabel">START MATCH</span>
+      </button>
     </section>
 
-    <!-- LIVE TEAM CARDS -->
-    <section class="team-grid">
-      <!-- Team A Card -->
+    <!-- ───────────────────────────────── ARENA GRID (ROW 2) — 3-col -->
+    <section class="arena-grid">
+
+      <!-- TEAM A CARD -->
       <article id="teamCardA" class="team-card team-card-a">
-        <div class="team-card-top">
-          <div class="team-identity">
-            <span class="side-label side-a">TEAM A</span>
-            <h2 id="teamAName" class="team-name">TEAM A</h2>
-            <p id="teamASpeaker" class="speaker-tag">DESIGNATED SPEAKER: --</p>
-          </div>
-          <div class="team-badges">
-            <span id="teamATurnBadge" class="turn-badge hidden">ACTIVE TURN</span>
-            <span id="teamAHits" class="hits">HITS: 0</span>
-          </div>
+        <div class="team-card-header">
+          <span class="side-label side-a">TEAM A</span>
+          <span id="teamATurnBadge" class="turn-badge hidden">ACTIVE TURN</span>
+          <span id="teamABuzzBadge" class="buzz-badge hidden">BUZZED!</span>
         </div>
-        <strong id="teamAScore" class="team-score">0</strong>
+        <div class="team-identity">
+          <h2 id="teamAName" class="team-name">TEAM A</h2>
+          <p id="teamASpeaker" class="speaker-tag">SPEAKER: --</p>
+        </div>
+        <div class="score-block">
+          <strong id="teamAScore" class="team-score">0</strong>
+          <span class="score-label">POINTS</span>
+        </div>
+        <div class="team-stats-row">
+          <span id="teamAHits" class="stat-pill hits-a">HITS: 0</span>
+          <span id="teamAPassedBadge" class="stat-pill passed-badge hidden">STEAL WINDOW</span>
+        </div>
+        <!-- Team A quick scoring (buzzer mode) -->
+        <div class="team-quick-verdict hidden" id="teamAVerdictRow">
+          <button class="verdict-team-btn correct" data-action="mark_correct" data-team-side="a">✓ CORRECT</button>
+          <button class="verdict-team-btn wrong" data-action="mark_wrong" data-team-side="a">✗ WRONG</button>
+        </div>
       </article>
 
-      <!-- Team B Card -->
+      <!-- CENTER COLUMN -->
+      <div class="center-column" id="centerColumn">
+
+        <!-- TIMER PANEL (shown in RAPID_FIRE / IDLE) -->
+        <div class="center-panel timer-panel" id="timerPanel">
+          <div class="center-panel-label">MATCH CHRONOMETER</div>
+
+          <!-- SVG arc ring -->
+          <div class="chrono-ring-wrap" id="chronoRingWrap">
+            <svg id="chronoSvg" viewBox="0 0 200 200" class="chrono-svg" aria-hidden="true">
+              <circle class="ring-track" cx="100" cy="100" r="82"/>
+              <circle class="ring-fill" id="ringFill" cx="100" cy="100" r="82"
+                stroke-dasharray="515.2" stroke-dashoffset="0"/>
+            </svg>
+            <div class="chrono-readout">
+              <div id="timerDisplay" class="timer-digits">02:00</div>
+              <div id="timerPhase" class="timer-state-pill ready">READY</div>
+              <div id="timerRawSec" class="timer-raw">120 SEC</div>
+            </div>
+          </div>
+
+          <!-- Timer Controls -->
+          <div class="timer-ctrl-row">
+            <button id="btnStartResume" class="btn btn-success btn-timer-main" data-action="start_timer">▶ Start 120s</button>
+            <button class="btn btn-outline btn-timer-sm" data-action="pause_timer">⏸</button>
+            <button class="btn btn-outline btn-timer-sm" data-action="reset_timer">↺</button>
+          </div>
+          <div class="timer-presets-row">
+            <span class="preset-label">PRESETS:</span>
+            <button class="btn btn-xs btn-outline" data-action="set_timer_preset" data-seconds="120">120s</button>
+            <button class="btn btn-xs btn-outline" data-action="set_timer_preset" data-seconds="60">60s</button>
+            <button class="btn btn-xs btn-outline" data-action="set_timer_preset" data-seconds="30">30s</button>
+            <span class="preset-sep">|</span>
+            <button class="btn btn-xs btn-outline" data-action="adjust_timer_delta" data-delta="10">+10s</button>
+            <button class="btn btn-xs btn-outline" data-action="adjust_timer_delta" data-delta="-10">−10s</button>
+            <button class="btn btn-xs btn-danger" data-action="adjust_timer_delta" data-seconds="0">Stop</button>
+          </div>
+        </div>
+
+        <!-- BUZZER RADAR (shown in BUZZER_BATTLE / SUDDEN_DEATH) -->
+        <div class="center-panel buzzer-panel hidden" id="buzzerPanel">
+          <div class="center-panel-label" id="buzzerPanelLabel">BUZZER BATTLE</div>
+
+          <!-- Animated radar -->
+          <div class="radar-wrap" id="radarWrap">
+            <div class="radar-ring ring-1"></div>
+            <div class="radar-ring ring-2"></div>
+            <div class="radar-ring ring-3"></div>
+            <div class="radar-core" id="radarCore">
+              <span id="radarIcon">📡</span>
+            </div>
+          </div>
+
+          <!-- Buzzer status -->
+          <div id="buzzerBanner" class="buzzer-banner locked">BUZZERS LOCKED</div>
+          <p id="buzzTimestamp" class="buzz-timestamp">No press registered.</p>
+
+          <!-- Buzzer admin controls -->
+          <div class="buzzer-admin-row">
+            <button class="btn btn-outline btn-sm" data-action="confirm_first_buzz" data-team="a">Confirm A</button>
+            <button class="btn btn-outline btn-sm" data-action="confirm_first_buzz" data-team="b">Confirm B</button>
+            <button class="btn btn-danger btn-sm" data-action="confirm_first_buzz" data-team="clear">Clear Buzz</button>
+          </div>
+          <div class="buzzer-lock-row">
+            <button class="btn btn-outline btn-sm" data-action="lock_buzzers">🔒 Lock</button>
+            <button class="btn btn-outline btn-sm" data-action="unlock_buzzers">🔓 Unlock</button>
+          </div>
+        </div>
+
+      </div><!-- /center-column -->
+
+      <!-- TEAM B CARD -->
       <article id="teamCardB" class="team-card team-card-b">
-        <div class="team-card-top">
-          <div class="team-identity">
-            <span class="side-label side-b">TEAM B</span>
-            <h2 id="teamBName" class="team-name">TEAM B</h2>
-            <p id="teamBSpeaker" class="speaker-tag">DESIGNATED SPEAKER: --</p>
-          </div>
-          <div class="team-badges">
-            <span id="teamBTurnBadge" class="turn-badge hidden">ACTIVE TURN</span>
-            <span id="teamBHits" class="hits">HITS: 0</span>
-          </div>
+        <div class="team-card-header">
+          <span class="side-label side-b">TEAM B</span>
+          <span id="teamBTurnBadge" class="turn-badge hidden">ACTIVE TURN</span>
+          <span id="teamBBuzzBadge" class="buzz-badge hidden">BUZZED!</span>
         </div>
-        <strong id="teamBScore" class="team-score">0</strong>
+        <div class="team-identity">
+          <h2 id="teamBName" class="team-name">TEAM B</h2>
+          <p id="teamBSpeaker" class="speaker-tag">SPEAKER: --</p>
+        </div>
+        <div class="score-block">
+          <strong id="teamBScore" class="team-score">0</strong>
+          <span class="score-label">POINTS</span>
+        </div>
+        <div class="team-stats-row">
+          <span id="teamBHits" class="stat-pill hits-b">HITS: 0</span>
+          <span id="teamBPassedBadge" class="stat-pill passed-badge hidden">STEAL WINDOW</span>
+        </div>
+        <!-- Team B quick scoring (buzzer mode) -->
+        <div class="team-quick-verdict hidden" id="teamBVerdictRow">
+          <button class="verdict-team-btn correct" data-action="mark_correct" data-team-side="b">✓ CORRECT</button>
+          <button class="verdict-team-btn wrong" data-action="mark_wrong" data-team-side="b">✗ WRONG</button>
+        </div>
       </article>
-    </section>
 
-    <!-- MAIN GRID: Question Matrix + Side Stack -->
-    <section class="main-grid">
+    </section><!-- /arena-grid -->
 
-      <!-- Question Matrix Card -->
-      <article class="console-card matrix-card">
-        <div class="card-title">
-          <div class="title-with-badge">
-            <h2>Spoken-Only Question Matrix</h2>
-            <span id="questionNumber" class="current-q">Q-</span>
+    <!-- ───────────────────────────────── VERDICT BAR + MATRIX (ROW 3) -->
+    <section class="verdict-matrix-section">
+
+      <!-- VERDICT BAR -->
+      <div class="verdict-bar">
+        <div class="verdict-bar-left">
+          <span id="scoreHint" class="score-hint">Select a phase above to begin.</span>
+        </div>
+        <div class="verdict-bar-actions">
+          <button id="btnCorrect" class="verdict-btn correct" data-action="mark_correct">✓ CORRECT (+10)</button>
+          <button id="btnWrong"   class="verdict-btn wrong"   data-action="mark_wrong">✗ WRONG (0)</button>
+          <button id="btnUndo"    class="verdict-btn undo"    data-action="undo_last_action">↶ UNDO</button>
+        </div>
+      </div>
+
+      <!-- QUESTION MATRIX -->
+      <div class="matrix-section">
+        <div class="matrix-header">
+          <div class="matrix-title-row">
+            <h3>Spoken-Only Question Matrix</h3>
+            <span id="questionNumber" class="current-q-pill">Q–</span>
+            <span id="matrixMode" class="mode-badge">BUZZER OPEN</span>
           </div>
-          <span id="matrixMode" class="mode-badge">BUZZER OPEN</span>
+          <div class="matrix-config-row">
+            <label class="config-label-inline">
+              Items:
+              <input id="totalQuestions" class="num-input-sm" type="number" min="1" max="60" value="15">
+            </label>
+            <button class="btn btn-xs btn-outline" data-action="set_total_questions">Apply</button>
+            <button class="btn btn-xs btn-outline" data-action="reset_question_matrix">Reset</button>
+            <span class="matrix-nav-sep">|</span>
+            <button class="btn btn-xs btn-outline" data-action="open_question">Open Q</button>
+            <button class="btn btn-xs btn-outline" data-action="next_question">Next Q</button>
+            <button class="btn btn-xs btn-outline" data-action="previous_question">Prev Q</button>
+            <button class="btn btn-xs btn-outline" data-action="mark_question_dead">Skip/Dead</button>
+            <button class="btn btn-xs btn-outline" data-action="reveal_answer">Reveal</button>
+          </div>
         </div>
-
-        <div class="matrix-config">
-          <label class="config-label">
-            Total Items
-            <input id="totalQuestions" class="num-input" type="number" min="1" max="60" value="15">
-          </label>
-          <button class="btn btn-outline" data-action="set_total_questions">Apply Count</button>
-          <button class="btn btn-outline btn-reset-matrix" data-action="reset_question_matrix">Reset Matrix</button>
-        </div>
-
         <div class="matrix-legend">
           <span class="legend-pill legend-a">TEAM A WON</span>
           <span class="legend-pill legend-b">TEAM B WON</span>
-          <span class="legend-pill legend-current">CURRENT / ACTIVE</span>
-          <span class="legend-pill legend-dead">DEAD / SKIPPED</span>
+          <span class="legend-pill legend-current">ACTIVE</span>
+          <span class="legend-pill legend-dead">DEAD</span>
           <span class="legend-pill legend-unasked">UNASKED</span>
         </div>
-
-        <!-- Question Grid -->
         <div id="questionMatrix" class="question-matrix"></div>
-
-        <!-- Matrix Telemetry Counters -->
-        <div class="stats-strip">
-          <span>CURRENT: <b id="currentStat">Q-</b></span>
+        <div class="matrix-stats-row">
+          <span>CURRENT: <b id="currentStat">Q–</b></span>
           <span>ASKED: <b id="askedStat">0</b></span>
-          <span>REMAINING: <b id="remainingStat">0</b></span>
-          <span>TEAM A HITS: <b id="matrixAHits" class="stat-a">0</b></span>
-          <span>TEAM B HITS: <b id="matrixBHits" class="stat-b">0</b></span>
+          <span>LEFT: <b id="remainingStat">0</b></span>
+          <span class="stat-a">A HITS: <b id="matrixAHits">0</b></span>
+          <span class="stat-b">B HITS: <b id="matrixBHits">0</b></span>
+          <span>AVG: <b id="paceTelemetry">0.00s/Q</b></span>
+          <span>STREAK: <b id="streakTelemetry">0</b></span>
         </div>
+      </div>
 
-        <div class="pace-strip">
-          <span>RAPID FIRE AVG PACE: <b id="paceTelemetry">0.00s/Q</b></span>
-          <span>CURRENT STREAK: <b id="streakTelemetry">0</b></span>
-        </div>
-      </article>
-
-      <!-- Side Stack: Timer + Buzzer Authority -->
-      <aside class="side-stack">
-
-        <!-- Countdown Timer Card: Master Chronometer -->
-        <article class="console-card timer-card">
-          <div class="card-title">
-            <div class="title-with-badge">
-              <h2>Match Chronometer</h2>
-              <span id="timerSyncBadge" class="sync-badge-pill">SYNCED</span>
-            </div>
-            <span id="timerPhase" class="timer-phase-pill">READY</span>
-          </div>
-
-          <!-- Digital LCD Container with Dynamic Depleting Progress Bar -->
-          <div class="timer-readout-panel">
-            <div class="mod-chrono" id="modChrono">
-              <svg id="modChronoSvg" viewBox="0 0 220 220" aria-hidden="true"></svg>
-              <div class="mod-chrono-read">
-                <div id="timerDisplay" class="timer">02:00</div>
-                <span id="timerModeLabel" class="timer-mode-tag">RAPID FIRE</span>
-                <span id="timerRawSec" class="timer-sec-tag">120 SEC REMAINING</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Primary Control Row -->
-          <div class="button-row timer-main-row">
-            <button id="btnStartResume" class="btn btn-success btn-timer-main" data-action="start_timer">▶ Start 120s Timer</button>
-            <button class="btn btn-outline" data-action="pause_timer">⏸ Pause</button>
-            <button class="btn btn-outline" data-action="reset_timer">↺ Reset 120s</button>
-          </div>
-
-          <!-- Tactical Quick Adjustments & Presets Bar -->
-          <div class="timer-tactical-row">
-            <span class="tactical-lbl">PRESETS:</span>
-            <button class="btn btn-xs btn-outline" data-action="set_timer_preset" data-seconds="120" title="Set 120 seconds">120s</button>
-            <button class="btn btn-xs btn-outline" data-action="set_timer_preset" data-seconds="60" title="Set 60 seconds">60s</button>
-            <button class="btn btn-xs btn-outline" data-action="set_timer_preset" data-seconds="30" title="Set 30 seconds">30s</button>
-            <span class="tactical-div">|</span>
-            <button class="btn btn-xs btn-outline" data-action="adjust_timer_delta" data-delta="10" title="Add 10 seconds">+10s</button>
-            <button class="btn btn-xs btn-outline" data-action="adjust_timer_delta" data-delta="-10" title="Subtract 10 seconds">-10s</button>
-            <button class="btn btn-xs btn-danger" data-action="adjust_timer_delta" data-seconds="0" title="Stop and clear timer">Stop (0s)</button>
-          </div>
-        </article>
-
-        <!-- Buzzer Authority Card -->
-        <article class="console-card buzzer-card">
-          <div class="card-title">
-            <h2>Buzzer Authority</h2>
-            <div class="buzzer-quick-locks">
-              <button class="btn btn-sm btn-outline" data-action="lock_buzzers">Lock</button>
-              <button class="btn btn-sm btn-outline" data-action="unlock_buzzers">Unlock</button>
-            </div>
-          </div>
-          <div id="buzzerBanner" class="buzzer-banner locked">BUZZERS LOCKED</div>
-          <p id="buzzTimestamp" class="muted telemetry-note">No press registered.</p>
-          <div class="button-row buzzer-actions">
-            <button class="btn btn-outline btn-confirm-a" data-action="confirm_first_buzz" data-team="a">Confirm Team A Buzz</button>
-            <button class="btn btn-outline btn-confirm-b" data-action="confirm_first_buzz" data-team="b">Confirm Team B Buzz</button>
-            <button class="btn btn-danger btn-clear-buzz" data-action="confirm_first_buzz" data-team="clear">Clear Buzz</button>
-          </div>
-        </article>
-
-      </aside>
     </section>
 
-    <!-- CONTROL GRID: Phase Switcher + Turn Routing -->
-    <section class="control-grid">
+    <!-- ───────────────────────────────── PHASE & ROUTING CONTROLS -->
+    <section class="controls-section">
 
-      <!-- Phase Controls Card -->
-      <article class="console-card">
-        <h2>Phase Controls</h2>
-        <div class="button-grid phase-buttons">
-          <button class="btn btn-primary" data-action="start_rapid_fire" data-team="a">Start Rapid Fire • Team A</button>
-          <button class="btn btn-primary" data-action="start_rapid_fire" data-team="b">Start Rapid Fire • Team B</button>
-          <button class="btn btn-outline" data-action="start_buzzer_battle">Start Buzzer Battle</button>
-          <button class="btn btn-outline" data-action="start_sudden_death">Trigger Sudden Death</button>
-          <button class="btn btn-warning wide" data-action="end_match">End Match &amp; Show Result</button>
+      <!-- Phase Switcher -->
+      <article class="ctrl-card">
+        <div class="ctrl-card-title">Phase Controls</div>
+        <div class="phase-btn-grid">
+          <button class="btn btn-primary" data-action="start_rapid_fire" data-team="a">▶ Rapid Fire • Team A</button>
+          <button class="btn btn-primary" data-action="start_rapid_fire" data-team="b">▶ Rapid Fire • Team B</button>
+          <button class="btn btn-outline" data-action="start_buzzer_battle">⚡ Start Buzzer Battle</button>
+          <button class="btn btn-outline" data-action="start_sudden_death">💀 Sudden Death</button>
+          <button class="btn btn-warning wide" data-action="end_match">🏁 End Match &amp; Result</button>
         </div>
       </article>
 
-      <!-- Turn Routing Card -->
-      <article class="console-card">
-        <h2>Turn Routing &amp; Block Flow</h2>
-        <div class="routing-grid">
-          <label class="config-label">
-            Mode
-            <select id="routingMode" class="form-select">
-              <option value="AUTO_ALTERNATE">AUTO_ALTERNATE</option>
-              <option value="TEAM_BLOCK">TEAM_BLOCK</option>
-              <option value="BUZZER_OPEN">BUZZER_OPEN</option>
-            </select>
-          </label>
-          <label class="config-label">
-            Q1 Starts
-            <select id="routingStart" class="form-select">
-              <option value="A">TEAM A</option>
-              <option value="B">TEAM B</option>
-            </select>
-          </label>
-          <label class="config-label">
-            Block Size
-            <input id="blockSize" class="num-input" type="number" min="1" value="10">
-          </label>
-          <button class="btn btn-outline wide" data-action="configure_routing">Apply Routing</button>
-        </div>
+      <!-- Turn Control -->
+      <article class="ctrl-card">
+        <div class="ctrl-card-title">Turn Control</div>
         <button class="btn btn-primary wide btn-switch-turn" data-action="switch_turn">
-          Switch Turn to Opponent &amp; Reset 120s Timer
+          Switch Turn &amp; Reset 120s Timer
         </button>
       </article>
 
-    </section>
-
-    <!-- PRIMARY SCORING & NAVIGATION CARD -->
-    <section class="console-card action-card">
-      <div class="action-head">
-        <div>
-          <h2>Scoring &amp; Item Navigation</h2>
-          <span id="scoreHint" class="muted score-hint-text">Server validates the scoring target.</span>
-        </div>
-        <button id="btnUndo" class="btn btn-danger btn-undo" data-action="undo_last_action">
-          Undo Last Action
-        </button>
-      </div>
-
-      <!-- High-Contrast Primary Scoring Buttons -->
-      <div class="score-actions">
-        <button id="btnCorrect" class="score-btn correct" data-action="mark_correct">CORRECT (+10)</button>
-        <button id="btnWrong" class="score-btn wrong" data-action="mark_wrong">WRONG / PASS (0)</button>
-      </div>
-
-      <!-- Navigation Bar -->
-      <div class="button-row nav-row">
-        <button class="btn btn-outline" data-action="previous_question">Previous Item</button>
-        <button class="btn btn-primary" data-action="open_question">Open Current Item</button>
-        <button class="btn btn-outline" data-action="next_question">Next Item</button>
-        <button class="btn btn-outline" data-action="mark_question_dead">Mark Dead / Skip</button>
-      </div>
-    </section>
-
-    <!-- BOTTOM GRID: Rulebook Violations + Shortcuts -->
-    <section class="bottom-grid">
-
-      <!-- Rulebook Violation / Foul Card -->
-      <article class="console-card">
-        <h2>Rulebook Violation / Foul Enforcement</h2>
+      <!-- Violations -->
+      <article class="ctrl-card">
+        <div class="ctrl-card-title">Violations &amp; Fouls</div>
         <div class="violation-grid">
           <label class="config-label full-span">
-            Violation Reason
+            Reason
             <select id="violationReason" class="form-select">
               <option value="No Mic">No Mic / Speaking without microphone</option>
-              <option value="Audience Coaching">Audience Coaching / Outside assistance</option>
-              <option value="Buzzer Interference">Buzzer Interference / Premature press</option>
-              <option value="Speaker Violation">Speaker Violation / Non-designated speaker</option>
+              <option value="Audience Coaching">Audience Coaching</option>
+              <option value="Buzzer Interference">Buzzer Interference</option>
+              <option value="Speaker Violation">Speaker Violation</option>
             </select>
           </label>
-          <button class="btn btn-outline" data-action="warning_logged" data-team="a">Team A Warning</button>
-          <button class="btn btn-outline" data-action="warning_logged" data-team="b">Team B Warning</button>
-          <button class="btn btn-danger" data-action="foul_penalty" data-team="a">Team A Foul (-5)</button>
-          <button class="btn btn-danger" data-action="foul_penalty" data-team="b">Team B Foul (-5)</button>
+          <button class="btn btn-outline btn-sm" data-action="warning_logged" data-team="a">Warn A</button>
+          <button class="btn btn-outline btn-sm" data-action="warning_logged" data-team="b">Warn B</button>
+          <button class="btn btn-danger btn-sm" data-action="foul_penalty" data-team="a">Foul A (−5)</button>
+          <button class="btn btn-danger btn-sm" data-action="foul_penalty" data-team="b">Foul B (−5)</button>
         </div>
-      </article>
-
-      <!-- Keyboard Shortcuts Card -->
-      <article class="console-card shortcut-card">
-        <div class="card-title">
-          <h2>Keyboard Shortcuts</h2>
-          <label class="toggle-wrap">
-            <input id="shortcutsToggle" type="checkbox" checked>
-            <span class="toggle-text">Shortcuts: ON</span>
-          </label>
-        </div>
-        <div class="shortcut-list">
-          <p><kbd>Space</kbd> Start / Pause Timer</p>
-          <p><kbd>C</kbd> Mark Correct</p>
-          <p><kbd>W</kbd> Mark Wrong / Pass</p>
-          <p><kbd>N</kbd> Next Item</p>
-          <p><kbd>Z</kbd> Undo Last Action</p>
-        </div>
-        <p id="actionMessage" class="action-message"></p>
       </article>
 
     </section>
+
+    <!-- ───────────────────────────────── KEYBOARD SHORTCUTS (collapsed) -->
+    <details class="shortcuts-details">
+      <summary class="shortcuts-summary">
+        <span>⌨ Keyboard Shortcuts</span>
+        <label class="toggle-wrap" onclick="event.stopPropagation()">
+          <input id="shortcutsToggle" type="checkbox" checked>
+          <span class="toggle-text">ON</span>
+        </label>
+      </summary>
+      <div class="shortcut-grid">
+        <span><kbd>Space</kbd> Start / Pause Timer</span>
+        <span><kbd>C</kbd> Mark Correct</span>
+        <span><kbd>W</kbd> Mark Wrong / Pass</span>
+        <span><kbd>N</kbd> Next Question</span>
+        <span><kbd>Z</kbd> Undo Last</span>
+      </div>
+      <p id="actionMessage" class="action-message"></p>
+    </details>
 
   </main>
 
   <script src="/static/client.js"></script>
+  <script src="/static/buzzer_sfx.js"></script>
   <script src="/static/moderator.js"></script>
 </body>
 </html>

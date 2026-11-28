@@ -117,7 +117,7 @@ def test_websocket_auth_and_permission_enforcement():
         ws.send_json({
             "type": "action",
             "action": "admin_adjust_score",
-            "payload": {"team_id": "team_1", "delta": 10}
+            "payload": {"team_id": "T01", "delta": 10}
         })
         err = ws.receive_json()
         assert err["type"] == "error"

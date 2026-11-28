@@ -20,6 +20,12 @@ if not exist "%PYTHON%" (
 set "PORT=%~1"
 if "%PORT%"=="" set "PORT=8000"
 
+echo [*] Freeing port %PORT% if a stale server is holding it ...
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr /R /C:":%PORT% .*LISTENING"') do (
+    echo [*] Stopping stale process PID %%a
+    taskkill /F /PID %%a >nul 2>&1
+)
+
 echo [*] Starting server on 0.0.0.0:%PORT% ...
 echo [*] Local hub: http://localhost:%PORT%/hub
 echo [*] Local display: http://localhost:%PORT%/display

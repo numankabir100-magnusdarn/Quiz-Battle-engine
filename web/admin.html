@@ -76,7 +76,7 @@
       </div>
       <div class="stage-item">
         <span class="stage-label">ACTIVE MATCH</span>
-        <strong id="matchDisplay" class="stage-value accent">M01 / 13</strong>
+        <strong id="matchDisplay" class="stage-value accent">M01 / 14</strong>
       </div>
       <div class="stage-item">
         <span class="stage-label">ROUND PHASE</span>
@@ -113,15 +113,16 @@
       </div>
     </section>
 
-    <!-- MODULE 2: 13-MATCH BRACKET & WILD CARD ENGINE -->
+    <!-- MODULE 2: 14-MATCH BRACKET & WILD CARD ENGINE -->
     <section class="admin-panel">
       <div class="panel-header">
         <div>
           <p class="eyebrow">TOURNAMENT PROGRESSION</p>
-          <h2>13-Match Interactive Bracket &amp; Wild-Card Engine</h2>
+          <h2>14-Match Interactive Bracket &amp; Wild-Card Engine</h2>
         </div>
         <div class="panel-actions">
-          <button id="btnRepopulateQf" class="btn btn-outline btn-sm">Populate Quarterfinals (6W + 2WC)</button>
+          <button id="btnSeedOfficial14" class="btn btn-primary btn-sm">Seed Official 14 Teams</button>
+          <button id="btnRepopulateQf" class="btn btn-outline btn-sm">Populate Quarterfinals (7 Winners + Top-1 Wild-Card)</button>
         </div>
       </div>
 
@@ -129,7 +130,7 @@
       <div id="wildCardTieBanner" class="wildcard-alert-box hidden">
         <div class="wildcard-alert-content">
           <strong class="alert-title">⚠️ QUALIFIER WILD-CARD TIE DETECTED</strong>
-          <p id="wildCardTieText">Multiple losing teams tied for the 2nd wild-card spot. Conduct a sudden-death question and select the winner below:</p>
+          <p id="wildCardTieText">Multiple losing teams tied for the Top-1 wild-card spot. Conduct a sudden-death question and select the winner below:</p>
           <div class="tie-breaker-controls">
             <select id="tieBreakerWinnerSelect" class="form-select"></select>
             <button id="btnResolveTie" class="btn btn-primary btn-sm">Confirm Wild-Card Winner</button>
@@ -140,41 +141,41 @@
       <!-- 4-Stage Visual Bracket -->
       <div class="bracket-converge">
         <div class="converge-wing">
-          <div class="converge-kicker">LEFT WING <span>M1–M3 → M7–M8 → M11</span></div>
+          <div class="converge-kicker">LEFT WING <span>M1–M4 → M8–M9 → M12</span></div>
           <div class="converge-cols">
             <div class="bracket-col">
-              <div class="bracket-col-header"><h3>QUALIFIERS</h3><span class="sub-badge">M1–M3</span></div>
+              <div class="bracket-col-header"><h3>QUALIFIERS</h3><span class="sub-badge">M1–M4</span></div>
               <div id="bracketLeftQual" class="bracket-match-list"></div>
             </div>
             <div class="bracket-col">
-              <div class="bracket-col-header"><h3>QUARTERFINALS</h3><span class="sub-badge">M7–M8</span></div>
+              <div class="bracket-col-header"><h3>QUARTERFINALS</h3><span class="sub-badge">M8–M9</span></div>
               <div id="bracketLeftQf" class="bracket-match-list"></div>
             </div>
             <div class="bracket-col">
-              <div class="bracket-col-header"><h3>SEMIFINAL</h3><span class="sub-badge">M11</span></div>
+              <div class="bracket-col-header"><h3>SEMIFINAL</h3><span class="sub-badge">M12</span></div>
               <div id="bracketLeftSf" class="bracket-match-list"></div>
             </div>
           </div>
         </div>
         <div class="converge-center">
           <div class="bracket-col final-col">
-            <div class="bracket-col-header"><h3>GRAND FINAL</h3><span class="sub-badge">M13</span></div>
+            <div class="bracket-col-header"><h3>GRAND FINAL</h3><span class="sub-badge">M14</span></div>
             <div id="bracketFinal" class="bracket-match-list"></div>
           </div>
         </div>
         <div class="converge-wing">
-          <div class="converge-kicker">RIGHT WING <span>M12 ← M9–M10 ← M4–M6</span></div>
+          <div class="converge-kicker">RIGHT WING <span>M13 ← M10–M11 ← M5–M7</span></div>
           <div class="converge-cols">
             <div class="bracket-col">
-              <div class="bracket-col-header"><h3>SEMIFINAL</h3><span class="sub-badge">M12</span></div>
+              <div class="bracket-col-header"><h3>SEMIFINAL</h3><span class="sub-badge">M13</span></div>
               <div id="bracketRightSf" class="bracket-match-list"></div>
             </div>
             <div class="bracket-col">
-              <div class="bracket-col-header"><h3>QUARTERFINALS</h3><span class="sub-badge">M9–M10</span></div>
+              <div class="bracket-col-header"><h3>QUARTERFINALS</h3><span class="sub-badge">M10–M11</span></div>
               <div id="bracketRightQf" class="bracket-match-list"></div>
             </div>
             <div class="bracket-col">
-              <div class="bracket-col-header"><h3>QUALIFIERS</h3><span class="sub-badge">M4–M6</span></div>
+              <div class="bracket-col-header"><h3>QUALIFIERS</h3><span class="sub-badge">M5–M7</span></div>
               <div id="bracketRightQual" class="bracket-match-list"></div>
             </div>
           </div>
@@ -184,8 +185,8 @@
       <!-- Wild-Card Ranking Leaderboard -->
       <div class="wildcard-card">
         <div class="card-title-sm">
-          <h3>Qualifier Losing Teams — Automatic Top-2 Wild-Card Leaderboard</h3>
-          <span class="muted-note">Top 2 highest-scoring losers advance to Quarterfinals (Matches 9 &amp; 10)</span>
+          <h3>Qualifier Losing Teams — Automatic Top-1 Wild-Card Leaderboard</h3>
+          <span class="muted-note">Top-1 highest-scoring loser advances to Quarterfinals (Match 8)</span>
         </div>
         <div id="wildCardLeaderboard" class="wildcard-table-wrap"></div>
       </div>
@@ -194,12 +195,12 @@
     <!-- TWO-COLUMN GRID: ROSTER MANAGER + SCORE CORRECTIONS -->
     <div class="admin-two-col">
 
-      <!-- MODULE 3: 12-TEAM ROSTER & ACCENT COLOR MANAGER -->
+      <!-- MODULE 3: 14-TEAM ROSTER & ACCENT COLOR MANAGER -->
       <section class="admin-panel">
         <div class="panel-header">
           <div>
             <p class="eyebrow">PARTICIPANT REGISTRATION</p>
-            <h2>12-Team Roster &amp; Color Manager</h2>
+            <h2>14-Team Roster &amp; Color Manager</h2>
           </div>
         </div>
 

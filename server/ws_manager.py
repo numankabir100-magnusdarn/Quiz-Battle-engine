@@ -56,6 +56,8 @@ ADMIN_ACTIONS: Set[str] = MODERATOR_ACTIONS | {
     "override_quarterfinal_pairings",
     "admin_update_team",
     "set_buzzer_source_mode",
+    "advance_winner",
+    "seed_official_14_teams",
 }
 HUB_ACTIONS: Set[str] = {
     "toggle_stage_lock",
@@ -122,12 +124,61 @@ class WebSocketManager:
         self.config: Config = config
         self.active_connections: Dict[str, ConnectedDevice] = {}
         self._lock: asyncio.Lock = asyncio.Lock()
+        self._sweep_task: Optional[asyncio.Task] = None
         stage_config = config.stage_config
         configured_ips = stage_config.get("authorized_ips", [])
         self.authorized_ips: Set[str] = set(DEFAULT_AUTHORIZED_IPS) | {
             str(ip).strip() for ip in configured_ips if str(ip).strip()
         }
         self.stage_locked: bool = bool(stage_config.get("locked", False))
+
+    async def start_sweep(self) -> None:
+        """Start background sweep to prune stale WebSocket connections (MEDIUM-9)."""
+        if self._sweep_task is None or self._sweep_task.done():
+            self._sweep_task = asyncio.create_task(self._sweep_loop())
+
+    async def stop_sweep(self) -> None:
+        """Stop background sweep task."""
+        if self._sweep_task and not self._sweep_task.done():
+            self._sweep_task.cancel()
+            try:
+                await self._sweep_task
+            except asyncio.CancelledError:
+                pass
+
+    async def _sweep_loop(self) -> None:
+        """Periodically check for and close stale connections."""
+        while True:
+            try:
+                await asyncio.sleep(30.0)  # Check every 30 seconds
+                stale_devices = []
+                async with self._lock:
+                    now = datetime.now(timezone.utc)
+                    for device_id, device in list(self.active_connections.items()):
+                        # Parse last_seen_at ISO string
+                        try:
+                            last_seen = datetime.fromisoformat(device.last_seen_at.replace('Z', '+00:00'))
+                            age = (now - last_seen).total_seconds()
+                            if age > 60.0:  # Stale after 60 seconds
+                                stale_devices.append(device_id)
+                        except Exception:
+                            # If timestamp parsing fails, consider stale
+                            stale_devices.append(device_id)
+                for device_id in stale_devices:
+                    async with self._lock:
+                        device = self.active_connections.get(device_id)
+                        if device:
+                            try:
+                                await device.websocket.close(code=1001, reason="Idle timeout")
+                            except Exception:
+                                pass
+                            self.unregister(device_id)
+                            await self.broadcast_event("device_disconnected", device=device.to_dict())
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                # Log but don't crash the sweep loop
+                pass
 
     def stage_lock_state(self) -> Dict[str, Any]:
         return {

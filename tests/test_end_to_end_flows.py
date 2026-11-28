@@ -43,7 +43,7 @@ def test_moderator_actions_persist_and_broadcast_state():
         })
         assert any(message["type"] == "action_ack" for message in messages)
         messages = _action_messages(websocket, "start_rapid_fire", {
-            "team_id": "team_1",
+            "team_id": "T01",
             "duration_seconds": 120,
         })
         assert any(message["type"] == "action_ack" for message in messages)
@@ -67,10 +67,10 @@ def test_buzzer_battle_pass_over_is_restricted_to_opponent():
         assert any(message["type"] == "action_ack" for message in messages)
     with client.websocket_connect("/ws") as moderator:
         _hello(moderator, "moderator", "1111")
-        messages = _action_messages(moderator, "mark_wrong", {"team_id": "team_1"})
+        messages = _action_messages(moderator, "mark_wrong", {"team_id": "T01"})
         assert any(message["type"] == "action_ack" for message in messages)
     state = client.get("/api/state").json()
-    assert state["buzzers"]["passed_to_team"] == "team_2"
+    assert state["buzzers"]["passed_to_team"] == "T02"
     assert state["buzzers"]["locked"] is False
 
 

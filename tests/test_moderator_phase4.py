@@ -26,4 +26,6 @@ def test_moderator_console_is_spoken_only_and_offline():
     assert "Answer" not in html
     assert "http://" not in html + css + javascript
     assert 'data-action="undo_last_action"' in html
-    assert 'data-action="configure_routing"' in html
+    assert 'data-action="switch_turn"' in html
+    assert 'data-action="configure_routing"' not in html
+    assert "Turn Routing" not in html

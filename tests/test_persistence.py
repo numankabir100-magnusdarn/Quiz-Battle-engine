@@ -17,12 +17,12 @@ def test_atomic_state_save_and_restore(temp_data_dir):
 
     # 1. Initialize and play moves
     engine1 = GameEngine(auto_init_tournament=True)
-    engine1.setup_match(Stage.QUALIFIER.value, 3, "team_5", "team_6")
+    engine1.setup_match(Stage.QUALIFIER.value, 3, "T05", "T06")
     engine1.start_buzzer_battle()
     engine1.open_question()
-    engine1.buzz("team_5")
+    engine1.buzz("T05")
     engine1.mark_correct()
-    engine1.admin_adjust_score("team_6", 5, reason="Bonus point")
+    engine1.admin_adjust_score("T06", 5, reason="Bonus point")
 
     # 2. Persist state
     state1 = engine1.get_state()
@@ -34,8 +34,8 @@ def test_atomic_state_save_and_restore(temp_data_dir):
     with open(state_file, "r", encoding="utf-8") as f:
         loaded_json = json.load(f)
     assert loaded_json["event"]["match_number"] == 3
-    assert loaded_json["current_match"]["scores"]["team_5"] == 15
-    assert loaded_json["current_match"]["scores"]["team_6"] == 5
+    assert loaded_json["current_match"]["scores"]["T05"] == 15
+    assert loaded_json["current_match"]["scores"]["T06"] == 5
 
     # 3. Discard engine1 ("crash") and create fresh engine2
     engine2 = GameEngine(auto_init_tournament=False)
@@ -48,10 +48,10 @@ def test_atomic_state_save_and_restore(temp_data_dir):
     # Compare key state structures
     assert state2["event"]["stage"] == state1["event"]["stage"]
     assert state2["event"]["match_number"] == state1["event"]["match_number"]
-    assert state2["current_match"]["team_a_id"] == "team_5"
-    assert state2["current_match"]["team_b_id"] == "team_6"
-    assert state2["current_match"]["scores"]["team_5"] == 15
-    assert state2["current_match"]["scores"]["team_6"] == 5
+    assert state2["current_match"]["team_a_id"] == "T05"
+    assert state2["current_match"]["team_b_id"] == "T06"
+    assert state2["current_match"]["scores"]["T05"] == 15
+    assert state2["current_match"]["scores"]["T06"] == 5
     assert state2["round"]["phase"] == RoundPhase.BUZZER_BATTLE.value
     assert len(state2["log"]) == len(state1["log"]) + 1  # includes restore_state log
 
@@ -64,14 +64,14 @@ def test_audit_log_append(temp_data_dir):
         role="moderator",
         device="laptop_mod",
         action="mark_correct",
-        details={"team": "team_1", "points": 15},
+        details={"team": "T01", "points": 15},
         reason="buzzer answer confirmed",
     )
     pm.log_audit(
         role="admin",
         device="laptop_adm",
         action="admin_adjust_score",
-        details={"team": "team_2", "delta": -5},
+        details={"team": "T02", "delta": -5},
         reason="penalty for behavior",
     )
 
@@ -99,8 +99,8 @@ def test_state_restore_always_pauses_timer(temp_data_dir):
     pm = PersistenceManager(data_dir=temp_data_dir)
 
     engine1 = GameEngine(auto_init_tournament=True)
-    engine1.setup_match(Stage.QUALIFIER.value, 1, "team_1", "team_2")
-    engine1.start_rapid_fire("team_1", 120)
+    engine1.setup_match(Stage.QUALIFIER.value, 1, "T01", "T02")
+    engine1.start_rapid_fire("T01", 120)
     # Simulate timer actively running mid-match
     engine1.round.timer_running = True
     engine1.round.timer_seconds_remaining = 87

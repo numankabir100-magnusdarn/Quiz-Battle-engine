@@ -28,7 +28,8 @@ STATIC_DIR = BASE_DIR / "web" / "static"
 WEB_DIR = BASE_DIR / "web"
 
 config = Config.load()
-persistence = PersistenceManager(data_dir=config.data_dir, logs_dir=BASE_DIR / "logs")
+logs_dir = Path(os.environ["LOGS_DIR"]).resolve() if os.environ.get("LOGS_DIR") else BASE_DIR / "logs"
+persistence = PersistenceManager(data_dir=config.data_dir, logs_dir=logs_dir)
 engine = GameEngine(auto_init_tournament=True)
 engine.snapshot_saver = persistence.save_match_snapshot
 timer = ServerTimer()
@@ -40,6 +41,9 @@ moderator_sessions: set[str] = set()
 hub_test_mode = False
 last_state_saved_at: Optional[str] = None
 buzzer_arrivals: Dict[str, float] = {}
+_persist_lock = asyncio.Lock()
+_persist_tasks: set[asyncio.Task] = set()
+pending_write: bool = False
 
 
 async def esp32_on_event(name: str, payload: Dict[str, Any]) -> None:
@@ -71,27 +75,24 @@ async def esp32_on_buzz(side: str) -> bool:
             await ws_manager.broadcast_event("buzz_first", team=team_id, source="esp32")
             return True
 
-        arrival_ms = time.time_ns() / 1_000_000
+        # HIGH-3: Use nanosecond precision for arrival timestamps to avoid collision.
+        arrival_ns = time.time_ns()
         try:
             result = engine.buzz(team_id=team_id)
         except (ValueError, RuntimeError) as err:
             await ws_manager.broadcast_event("esp32_buzz_rejected", team=team_id, side=side, reason=str(err))
             return False
 
-        previous_arrival = max(buzzer_arrivals.values()) if buzzer_arrivals else None
-        buzzer_arrivals[team_id] = arrival_ms
-        delta_ms = round(arrival_ms - previous_arrival, 3) if previous_arrival is not None else None
-        result["arrival_timestamp_ms"] = round(arrival_ms, 3)
+        previous_arrival = max(engine._buzzer_arrivals.values()) if engine._buzzer_arrivals else None
+        engine._buzzer_arrivals[team_id] = arrival_ns
+        delta_ns = (arrival_ns - previous_arrival) if previous_arrival is not None else None
+        delta_ms = round(delta_ns / 1_000_000, 3) if delta_ns is not None else None
+        result["arrival_timestamp_ns"] = arrival_ns
+        result["arrival_timestamp_ms"] = round(arrival_ns / 1_000_000, 3)
+        result["delta_ns"] = delta_ns
         result["delta_ms"] = delta_ms
 
-        save_state()
-        persistence.log_audit(
-            role="esp32",
-            device=esp_bridge.locked_ip or "esp32",
-            action="buzz",
-            details={"side": side, "team_id": team_id},
-            reason="ESP32 hardware buzz",
-        )
+        state_snapshot = get_state()
         await ws_manager.broadcast_event(
             "buzz_first",
             team=team_id,
@@ -101,10 +102,20 @@ async def esp32_on_buzz(side: str) -> bool:
         await ws_manager.broadcast_event(
             "fairness_telemetry",
             team=team_id,
-            arrival_timestamp_ms=round(arrival_ms, 3),
+            arrival_timestamp_ns=arrival_ns,
+            arrival_timestamp_ms=round(arrival_ns / 1_000_000, 3),
+            delta_ns=delta_ns,
             delta_ms=delta_ms,
         )
-        await ws_manager.broadcast_state(engine.get_state())
+        await ws_manager.broadcast_state(state_snapshot)
+        schedule_persistence(
+            state_snapshot,
+            role="esp32",
+            device=esp_bridge.locked_ip or "esp32",
+            action="buzz",
+            payload={"side": side, "team_id": team_id},
+            reason="ESP32 hardware buzz",
+        )
         return True
 
 
@@ -117,37 +128,140 @@ def save_state() -> None:
     last_state_saved_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
+def _write_persistence_snapshot(
+    state_snapshot: Dict[str, Any],
+    role: str,
+    device: str,
+    action: Optional[str],
+    payload: Dict[str, Any],
+    reason: str,
+) -> None:
+    global last_state_saved_at
+    persistence.save_state(state_snapshot)
+    last_state_saved_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    if action:
+        persistence.log_audit(
+            role=role,
+            device=device,
+            action=action,
+            details=payload,
+            reason=reason,
+        )
+
+
+async def _persist_snapshot_async(
+    state_snapshot: Dict[str, Any],
+    role: str,
+    device: str,
+    action: Optional[str],
+    payload: Dict[str, Any],
+    reason: str,
+) -> None:
+    async with _persist_lock:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None,
+            _write_persistence_snapshot,
+            state_snapshot,
+            role,
+            device,
+            action,
+            payload,
+            reason,
+        )
+
+
+def _persist_done(task: asyncio.Task) -> None:
+    global pending_write
+    _persist_tasks.discard(task)
+    if not _persist_tasks:
+        pending_write = False
+    if task.cancelled():
+        return
+    error = task.exception()
+    if error is not None:
+        print(f"[Persistence] Async save failed: {error}")
+
+
+async def flush_persistence() -> None:
+    """Await all in-flight persistence writes (round transitions / match end)."""
+    global pending_write
+    if _persist_tasks:
+        await asyncio.gather(*list(_persist_tasks), return_exceptions=True)
+    pending_write = bool(_persist_tasks)
+
+
+def schedule_persistence(
+    state_snapshot: Dict[str, Any],
+    role: str = "system",
+    device: str = "server",
+    action: Optional[str] = None,
+    payload: Optional[Dict[str, Any]] = None,
+    reason: str = "",
+) -> None:
+    global pending_write
+    pending_write = True
+    task = asyncio.create_task(
+        _persist_snapshot_async(
+            state_snapshot,
+            role,
+            device,
+            action,
+            payload or {},
+            reason,
+        )
+    )
+    _persist_tasks.add(task)
+    task.add_done_callback(_persist_done)
+
+
 async def on_timer_tick(seconds: int) -> None:
     engine.round.timer_seconds_remaining = seconds
     engine.round.timer_running = True
-    save_state()
+    state_snapshot = get_state()
     await ws_manager.broadcast_event(
         "timer_tick",
         seconds=seconds,
         seconds_remaining=seconds,
         running=True,
     )
-    await ws_manager.broadcast_state(engine.get_state())
+    await ws_manager.broadcast_state(state_snapshot)
+    # MEDIUM-6: Don't persist on every tick; only on state-changing actions.
+    # schedule_persistence(state_snapshot, role="system", device="timer", reason="timer tick")
 
 
 async def on_timer_expired() -> None:
-    engine.round.timer_running = False
-    engine.round.timer_seconds_remaining = 0
-    save_state()
-    persistence.log_audit(
-        role="system",
-        device="timer",
-        action="timer_expired",
-        details={"phase": engine.round.phase},
-        reason="time limit reached",
-    )
+    phase = engine.round.phase
+    if phase == RoundPhase.RAPID_FIRE.value:
+        if engine.round.active_team_id == engine.current_match.team_a_id:
+            engine.switch_turn(120)
+            engine.start_rapid_fire(engine.current_match.team_b_id, 120)
+        else:
+            engine.start_buzzer_battle()
+    else:
+        engine.round.timer_running = False
+        engine.round.timer_seconds_remaining = 0
+
+    state_snapshot = get_state()
     await ws_manager.broadcast_event(
         "timer_expired",
         seconds=0,
         seconds_remaining=0,
-        running=False,
+        running=bool(engine.round.timer_running),
     )
-    await ws_manager.broadcast_state(engine.get_state())
+    await ws_manager.broadcast_state(state_snapshot)
+    schedule_persistence(
+        state_snapshot,
+        role="system",
+        device="timer",
+        action="timer_expired",
+        payload={"phase": engine.round.phase},
+        reason="time limit reached",
+    )
+    await flush_persistence()
+
+    if hasattr(engine, '_buzzer_arrivals'):
+        engine._buzzer_arrivals = {}
 
 
 @asynccontextmanager
@@ -171,11 +285,19 @@ async def lifespan(app: FastAPI):
     else:
         print("[Server] ESP32 UDP listener disabled by configuration")
 
+    # MEDIUM-9: Start background sweep for stale WebSocket connections.
+    # Skip in test environment to avoid event loop issues.
+    import sys
+    if "pytest" not in sys.modules:
+        await ws_manager.start_sweep()
+
     yield
 
     # Shutdown
     timer.pause()
     await esp_bridge.stop()
+    if "pytest" not in sys.modules:
+        await ws_manager.stop_sweep()
     print("[Server] Server shutting down")
 
 
@@ -385,10 +507,10 @@ def admin_report(request: Request, format: str = "json") -> Response:
     output = io.StringIO()
     writer = csv.writer(output)
 
-    writer.writerow(["SECTION 1: 12-TEAM CUMULATIVE & MATCH-BY-MATCH STANDINGS"])
+    writer.writerow(["SECTION 1: 14-TEAM CUMULATIVE & MATCH-BY-MATCH STANDINGS"])
     writer.writerow(
         ["Team ID", "Team Name", "Designated Speaker", "Total Points", "Matches Played", "Wins", "Losses"]
-        + [f"M{number}" for number in range(1, 14)]
+        + [f"M{number}" for number in range(1, 15)]
     )
     for team_id in sorted(teams):
         team = teams[team_id]
@@ -402,7 +524,7 @@ def admin_report(request: Request, format: str = "json") -> Response:
             win_loss.get("wins", 0),
             win_loss.get("losses", 0),
         ]
-        row.extend(team.get("match_scores", {}).get(str(number), 0) for number in range(1, 14))
+        row.extend(team.get("match_scores", {}).get(str(number), 0) for number in range(1, 15))
         writer.writerow(row)
     writer.writerow([])
 
@@ -536,6 +658,11 @@ def get_admin_page() -> str:
     return _read_web_page("admin.html")
 
 
+@app.get("/results", response_class=HTMLResponse)
+def get_results_page() -> str:
+    return _read_web_page("results.html")
+
+
 @app.get("/moderator", response_class=HTMLResponse)
 def get_moderator_page() -> str:
     return _read_web_page("moderator.html")
@@ -609,9 +736,10 @@ async def post_advance_and_load_next() -> Dict[str, Any]:
     timer.pause()
     esp_bridge.send_reset()
     res = engine.advance_and_load_next()
-    save_state()
+    state_snapshot = get_state()
     await ws_manager.broadcast_event("match_advanced", **res)
-    await ws_manager.broadcast_state(get_state())
+    await ws_manager.broadcast_state(state_snapshot)
+    schedule_persistence(state_snapshot, role="system", device="rest", action="advance_and_load_next", payload=res)
     return res
 
 
@@ -620,9 +748,10 @@ async def post_reset_scores_keep_roster() -> Dict[str, Any]:
     timer.pause()
     esp_bridge.send_reset()
     res = engine.reset_scores_keep_roster()
-    save_state()
+    state_snapshot = get_state()
     await ws_manager.broadcast_event("scores_reset_keep_roster", **res)
-    await ws_manager.broadcast_state(get_state())
+    await ws_manager.broadcast_state(state_snapshot)
+    schedule_persistence(state_snapshot, role="system", device="rest", action="reset_scores_keep_roster", payload=res)
     return res
 
 
@@ -773,18 +902,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 async with ws_manager._lock:
                     try:
                         res = await execute_engine_action(device, action, payload, reason)
-                        # State mutated successfully: atomically persist to disk
-                        persistence.save_state(engine.get_state())
-                        persistence.log_audit(
-                            role=device.role,
-                            device=device.device_id,
-                            action=action,
-                            details=payload,
-                            reason=reason,
-                        )
-                        # Broadcast state update to all clients
-                        await ws_manager.broadcast_state(engine.get_state())
-                        # Send ack to sender
+                        state_snapshot = get_state()
+                        await ws_manager.broadcast_state(state_snapshot)
                         await websocket.send_json(
                             {
                                 "type": "action_ack",
@@ -792,6 +911,14 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                                 "success": True,
                                 "result": res,
                             }
+                        )
+                        schedule_persistence(
+                            state_snapshot,
+                            role=device.role,
+                            device=device.device_id,
+                            action=action,
+                            payload=payload,
+                            reason=reason,
                         )
                         if action == "buzz" and isinstance(res, dict):
                             await ws_manager.broadcast_event(
@@ -859,18 +986,40 @@ async def execute_engine_action(
         if not target_team:
             raise ValueError("Team must be specified for buzz action")
 
-        arrival_ms = time.time_ns() / 1_000_000
+        # HIGH-3: Use nanosecond precision for arrival timestamps to avoid collision.
+        arrival_ns = time.time_ns()
         res = engine.buzz(team_id=target_team, timestamp=payload.get("timestamp"))
-        previous_arrival = max(buzzer_arrivals.values()) if buzzer_arrivals else None
-        buzzer_arrivals[target_team] = arrival_ms
-        delta_ms = round(arrival_ms - previous_arrival, 3) if previous_arrival is not None else None
-        res["arrival_timestamp_ms"] = round(arrival_ms, 3)
+        previous_arrival = max(engine._buzzer_arrivals.values()) if engine._buzzer_arrivals else None
+        engine._buzzer_arrivals[target_team] = arrival_ns
+        delta_ns = (arrival_ns - previous_arrival) if previous_arrival is not None else None
+        delta_ms = round(delta_ns / 1_000_000, 3) if delta_ns is not None else None
+        res["arrival_timestamp_ns"] = arrival_ns
+        res["arrival_timestamp_ms"] = round(arrival_ns / 1_000_000, 3)
+        res["delta_ns"] = delta_ns
         res["delta_ms"] = delta_ms
         # Broadcast buzz event for client animation
         await ws_manager.broadcast_event(
             "buzz_first",
             team=target_team,
             timestamp=res.get("press_timestamp"),
+        )
+        await ws_manager.broadcast_event(
+            "fairness_telemetry",
+            team=target_team,
+            arrival_timestamp_ns=arrival_ns,
+            arrival_timestamp_ms=round(arrival_ns / 1_000_000, 3),
+            delta_ns=delta_ns,
+            delta_ms=delta_ms,
+        )
+        # Send action_ack to the originating device
+        await ws_manager.send_to_device(
+            device.device_id,
+            {
+                "type": "action_ack",
+                "action": "buzz",
+                "success": True,
+                "result": res,
+            },
         )
         return res
 
@@ -886,8 +1035,9 @@ async def execute_engine_action(
         t_b = payload.get("team_b_id")
         if not t_a or not t_b:
             raise ValueError("Both team_a_id and team_b_id are required")
-        engine.setup_match(stage, match_num, t_a, t_b)
+        # HIGH-6: Pause any existing timer before setting up a new match.
         timer.pause()
+        engine.setup_match(stage, match_num, t_a, t_b)
         return {"match_number": match_num}
 
     elif action == "set_display_view":
@@ -904,22 +1054,34 @@ async def execute_engine_action(
                                         int(payload.get("block_size", 10)))
 
     elif action == "switch_turn":
-        result = engine.switch_turn(int(payload.get("reset_seconds", 120)))
-        timer.reset(int(payload.get("reset_seconds", 120)))
+        reset_sec = int(payload.get("reset_seconds", 120))
+        # HIGH-6: Pause any existing timer before switching turn.
+        timer.pause()
+        result = engine.switch_turn(reset_sec)
+        timer.reset(reset_sec)
         esp_bridge.send_reset()
+        await ws_manager.broadcast_event(
+            "timer_reset",
+            seconds=reset_sec,
+            seconds_remaining=reset_sec,
+            running=False,
+        )
         return result
 
     elif action == "select_question":
         return engine.select_question(int(payload.get("question_number", 1)))
 
     elif action == "mark_question_won":
-        return engine.mark_correct(payload.get("team_id"))
+        return engine.mark_question_won(payload.get("team_id"))
 
     elif action == "mark_question_dead":
         return engine.mark_question_dead()
 
     elif action == "reset_question_matrix":
         return engine.reset_question_matrix()
+
+    elif action == "redo_question":
+        return engine.redo_question()
 
     elif action == "undo_last_action":
         return engine.undo_last_action()
@@ -947,6 +1109,8 @@ async def execute_engine_action(
         duration = int(payload.get("duration_seconds", 120))
         if not team_id:
             raise ValueError("team_id is required to start Rapid Fire")
+        # HIGH-6: Pause any existing timer before starting a new one.
+        timer.pause()
         engine.start_rapid_fire(team_id, duration)
         timer.start(duration, on_tick=on_timer_tick, on_expired=on_timer_expired)
         engine.round.timer_running = True
@@ -960,13 +1124,24 @@ async def execute_engine_action(
         return {"team_id": team_id, "duration": duration}
 
     elif action == "start_buzzer_battle":
-        engine.start_buzzer_battle()
+        # HIGH-6: Pause any existing timer before starting Buzzer Battle.
         timer.pause()
+        engine.start_buzzer_battle()
+        timer.reset(0)
+        engine.round.timer_running = False
+        engine.round.timer_seconds_remaining = 0
         esp_bridge.send_reset()
+        await ws_manager.broadcast_event(
+            "timer_reset",
+            seconds=0,
+            seconds_remaining=0,
+            running=False,
+        )
+        await ws_manager.broadcast_event("buzzer_battle_started", phase=RoundPhase.BUZZER_BATTLE.value)
         return {"phase": RoundPhase.BUZZER_BATTLE.value}
 
     elif action == "open_question":
-        buzzer_arrivals.clear()
+        engine._buzzer_arrivals.clear()
         res = engine.open_question()
         esp_bridge.send_reset()
         return res
@@ -974,16 +1149,40 @@ async def execute_engine_action(
     elif action == "mark_correct":
         team_id = payload.get("team_id")
         res = engine.mark_correct(team_id)
-        await ws_manager.broadcast_event("score_changed", result=res)
+        if not (isinstance(res, dict) and res.get("duplicate")):
+            await ws_manager.broadcast_event("score_changed", result=res)
+            if isinstance(res, dict) and res.get("rf_complete"):
+                timer.pause()
+                engine.round.timer_running = False
+                engine.round.timer_seconds_remaining = timer.seconds_remaining
+                await ws_manager.broadcast_event(
+                    "timer_paused",
+                    seconds=timer.seconds_remaining,
+                    seconds_remaining=timer.seconds_remaining,
+                    running=False,
+                )
+                await ws_manager.broadcast_event("rf_turn_complete", message=res.get("rf_message", ""))
         return res
 
     elif action == "mark_wrong":
         team_id = payload.get("team_id")
         res = engine.mark_wrong(team_id)
-        if engine.buzzers.passed_to_team:
-            passed_side = "A" if engine.current_match and engine.buzzers.passed_to_team == engine.current_match.team_a_id else "B"
-            esp_bridge.send_pass(passed_side)
-        await ws_manager.broadcast_event("score_changed", result=res)
+        if not (isinstance(res, dict) and res.get("duplicate")):
+            if engine.buzzers.passed_to_team:
+                passed_side = "A" if engine.current_match and engine.buzzers.passed_to_team == engine.current_match.team_a_id else "B"
+                esp_bridge.send_pass(passed_side)
+            await ws_manager.broadcast_event("score_changed", result=res)
+            if isinstance(res, dict) and res.get("rf_complete"):
+                timer.pause()
+                engine.round.timer_running = False
+                engine.round.timer_seconds_remaining = timer.seconds_remaining
+                await ws_manager.broadcast_event(
+                    "timer_paused",
+                    seconds=timer.seconds_remaining,
+                    seconds_remaining=timer.seconds_remaining,
+                    running=False,
+                )
+                await ws_manager.broadcast_event("rf_turn_complete", message=res.get("rf_message", ""))
         return res
 
     elif action == "reveal_answer":
@@ -1001,7 +1200,7 @@ async def execute_engine_action(
         return {"locked": False}
 
     elif action == "next_question":
-        buzzer_arrivals.clear()
+        engine._buzzer_arrivals.clear()
         res = engine.next_question()
         esp_bridge.send_reset()
         return res
@@ -1010,19 +1209,51 @@ async def execute_engine_action(
         return engine.previous_question()
 
     elif action == "skip_question":
-        return engine.mark_question_dead()
+        return engine.skip_question()
 
     elif action == "start_sudden_death":
-        engine.start_sudden_death()
+        # HIGH-6: Pause any existing timer before starting Sudden Death.
         timer.pause()
+        engine.start_sudden_death()
+        timer.reset(0)
+        engine.round.timer_running = False
+        engine.round.timer_seconds_remaining = 0
         esp_bridge.send_reset()
-        await ws_manager.broadcast_event("sudden_death_started")
+        await ws_manager.broadcast_event(
+            "timer_reset",
+            seconds=0,
+            seconds_remaining=0,
+            running=False,
+        )
+        await ws_manager.broadcast_event("sudden_death_started", phase=RoundPhase.SUDDEN_DEATH.value)
         return {"phase": RoundPhase.SUDDEN_DEATH.value}
 
     elif action == "end_match":
         res = engine.end_match()
         timer.pause()
         await ws_manager.broadcast_event("match_ended", result=res)
+        state_snapshot = get_state()
+        schedule_persistence(state_snapshot, role=device.role, device=device.device_id,
+                             action=action, payload=payload, reason=reason)
+        await flush_persistence()
+        return res
+
+    elif action == "advance_winner":
+        match_number = payload.get("match_number")
+        if match_number is None or str(match_number).strip() == "":
+            raise ValueError("match_number is required for advance_winner")
+        winner_id = payload.get("winner_id") or None
+        res = engine.advance_winner(match_number=match_number, winner_id=winner_id)
+        timer.pause()
+        esp_bridge.send_reset()
+        await ws_manager.broadcast_event("match_advanced", **res)
+        return res
+
+    elif action == "seed_official_14_teams":
+        timer.pause()
+        esp_bridge.send_reset()
+        res = engine.seed_official_14_teams()
+        await ws_manager.broadcast_event("official_14_teams_seeded", **res)
         return res
 
     elif action == "advance_and_load_next":
@@ -1074,14 +1305,6 @@ async def execute_engine_action(
             payload.get("authorized_ips"),
         )
         await ws_manager.broadcast_event("stage_lock_changed", **result)
-        await ws_manager.broadcast_state(engine.get_state())
-        persistence.log_audit(
-            role=device.role,
-            device=device.device_id,
-            action="toggle_stage_lock",
-            details=result,
-            reason=reason,
-        )
         return result
 
     elif action == "set_buzzer_source_mode":
@@ -1089,16 +1312,7 @@ async def execute_engine_action(
         normalized = str(mode).upper()
         engine.strict_esp32 = (normalized == "ESP32")
         result = engine.set_buzzer_source_mode(normalized)
-        save_state()
         await ws_manager.broadcast_event("buzzer_source_mode_changed", mode=normalized)
-        await ws_manager.broadcast_state(get_state())
-        persistence.log_audit(
-            role=device.role,
-            device=device.device_id,
-            action="set_buzzer_source_mode",
-            details=result,
-            reason=reason,
-        )
         return result
 
     elif action == "hub_esp32_test":
@@ -1257,7 +1471,7 @@ async def execute_engine_action(
         engine.round.timer_running = timer.is_running
         engine.round.timer_seconds_remaining = timer.seconds_remaining
         await ws_manager.broadcast_event(
-            "timer_resumed",
+            "timer_started",
             seconds=timer.seconds_remaining,
             seconds_remaining=timer.seconds_remaining,
             running=timer.is_running,

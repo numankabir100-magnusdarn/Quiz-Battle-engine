@@ -87,6 +87,7 @@ MATCH_STAT_KEYS = (
     "buzzer_points",
     "foul_penalties",
     "questions_answered",
+    "rf_attempted",
 )
 
 
@@ -96,7 +97,7 @@ def blank_match_stats() -> Dict[str, int]:
 
 @dataclass
 class MatchData:
-    match_number: int  # 1 to 13
+    match_number: int  # 1 to 14
     stage: str         # "Qualifier", "Quarterfinal", "Semifinal", "Final"
     team_a_id: Optional[str] = None
     team_b_id: Optional[str] = None
@@ -271,13 +272,47 @@ class QuestionMatrixState:
     team_a_correct: int = 0
     team_b_correct: int = 0
     unanswered_count: int = 0
+    # Independent per-team Rapid Fire matrices and match-wide Buzzer Battle matrix.
+    # Stored as serialized QuestionMatrixState dicts to avoid circular dataclass references.
+    team_a_matrix: Optional[Dict[str, Any]] = None
+    team_b_matrix: Optional[Dict[str, Any]] = None
+    buzzer_matrix: Optional[Dict[str, Any]] = None
+
+    def _normalize_statuses(self) -> None:
+        """Enforce len(statuses) == total_questions with sequential nums 1..N.
+        Drops out-of-range/duplicate slots and pads missing ones so the matrix
+        can never render more or fewer tiles than the configured item count."""
+        by_num: Dict[int, Dict[str, Any]] = {}
+        for item in self.statuses or []:
+            if not isinstance(item, dict):
+                continue
+            try:
+                num = int(item.get("num"))
+            except (TypeError, ValueError):
+                continue
+            if 1 <= num <= self.total_questions and num not in by_num:
+                by_num[num] = dict(item)
+        self.statuses = [
+            by_num.get(number)
+            or {"num": number, "status": "unasked", "winner_side": None, "phase": None}
+            for number in range(1, self.total_questions + 1)
+        ]
 
     def __post_init__(self) -> None:
+        if self.current_question_num is not None:
+            try:
+                current = int(self.current_question_num)
+            except (TypeError, ValueError):
+                current = None
+            self.current_question_num = (
+                current if current is not None and 1 <= current <= self.total_questions else None
+            )
         if not self.statuses:
             self.statuses = [
                 {"num": number, "status": "unasked", "winner_side": None, "phase": None}
                 for number in range(1, self.total_questions + 1)
             ]
+        self._normalize_statuses()
         self.recalculate()
 
     def recalculate(self) -> None:
@@ -301,6 +336,9 @@ class QuestionMatrixState:
             "team_a_correct": self.team_a_correct,
             "team_b_correct": self.team_b_correct,
             "unanswered_count": self.unanswered_count,
+            "team_a_matrix": self.team_a_matrix,
+            "team_b_matrix": self.team_b_matrix,
+            "buzzer_matrix": self.buzzer_matrix,
         }
 
     @classmethod
@@ -319,9 +357,64 @@ class QuestionMatrixState:
             turn_start_side=data.get("turn_start_side", "A"),
             team_block_size=int(data.get("team_block_size", 10)),
             statuses=statuses,
+            team_a_matrix=data.get("team_a_matrix"),
+            team_b_matrix=data.get("team_b_matrix"),
+            buzzer_matrix=data.get("buzzer_matrix"),
         )
+        matrix._normalize_statuses()
         matrix.recalculate()
         return matrix
+
+    def slot(self, number: int) -> Optional[Dict[str, Any]]:
+        """Return the status dict for a given question number, or None."""
+        for item in self.statuses:
+            if item.get("num") == number:
+                return item
+        return None
+
+    def set_slot_result(
+        self,
+        number: int,
+        status: str,
+        winner_side: Optional[str] = None,
+        points_delta: int = 0,
+        stat_delta: Optional[str] = None,
+        target_team: Optional[str] = None,
+        phase: Optional[str] = None,
+    ) -> None:
+        """Mark a question slot with its final result and scoring delta for rollback support."""
+        item = self.slot(number)
+        if item is None:
+            return
+        item["status"] = status
+        item["winner_side"] = winner_side
+        item["phase"] = phase or item.get("phase")
+        if points_delta:
+            item["points_delta"] = int(points_delta)
+        if stat_delta:
+            item["stat_delta"] = stat_delta
+        if target_team:
+            item["target_team"] = target_team
+        self.recalculate()
+
+    def clear_slot(self, number: int) -> Optional[Dict[str, Any]]:
+        """Clear a question slot back to unasked, returning its prior scoring delta for rollback."""
+        item = self.slot(number)
+        if item is None:
+            return None
+        prior = {
+            "points_delta": int(item.get("points_delta", 0)),
+            "stat_delta": item.get("stat_delta"),
+            "target_team": item.get("target_team"),
+            "winner_side": item.get("winner_side"),
+        }
+        item["status"] = "unasked"
+        item["winner_side"] = None
+        item.pop("points_delta", None)
+        item.pop("stat_delta", None)
+        item.pop("target_team", None)
+        self.recalculate()
+        return prior
 
 
 @dataclass

@@ -31,12 +31,15 @@
       <div class="bug-center">
         <div class="match-pill">
           <i class="live-pip" id="livePip"></i>
-          <span id="matchLabel">QUALIFIER · MATCH 01 OF 13</span>
+          <span id="matchLabel">QUALIFIER · MATCH 01 OF 14</span>
         </div>
         <div class="mode-badge" id="modeBadge" data-phase="IDLE">IDLE</div>
       </div>
 
-      <div class="bug-right"></div>
+      <div class="bug-right">
+        <div id="linkStatus" class="link-status"><i></i><span id="linkText">LINK</span></div>
+        <div id="soundInd" class="sound-ind">M · MUTE</div>
+      </div>
     </header>
 
     <div class="stack">
@@ -46,7 +49,9 @@
             <div class="wing-kicker" id="kickerA">TEAM A</div>
             <h2 class="wing-name" id="nameA">Awaiting Teams</h2>
             <div class="speaker-plate"><span>DESIGNATED SPEAKER</span><strong id="speakerA">—</strong></div>
+            <div class="members-line" id="membersA"></div>
             <div class="odo" id="scoreA">0</div>
+            <div class="total-score" id="totalA"></div>
             <div class="clock-badge" id="badgeA">ON THE CLOCK · SPEAKING</div>
             <div class="streak" id="streakA" hidden>🔥 0 IN A ROW</div>
             <div class="ready-bar" id="readyA"><i></i><span>ARMED &amp; LISTENING</span></div>
@@ -106,7 +111,9 @@
             <div class="wing-kicker" id="kickerB">TEAM B</div>
             <h2 class="wing-name" id="nameB">Awaiting Teams</h2>
             <div class="speaker-plate"><span>DESIGNATED SPEAKER</span><strong id="speakerB">—</strong></div>
+            <div class="members-line" id="membersB"></div>
             <div class="odo" id="scoreB">0</div>
+            <div class="total-score" id="totalB"></div>
             <div class="clock-badge" id="badgeB">ON THE CLOCK · SPEAKING</div>
             <div class="streak" id="streakB" hidden>🔥 0 IN A ROW</div>
             <div class="ready-bar" id="readyB"><i></i><span>ARMED &amp; LISTENING</span></div>
@@ -133,13 +140,13 @@
           <div class="bracket-board" id="bracketBoard">
             <svg id="bracketSvg" aria-hidden="true"></svg>
             <section class="bracket-wing wing-left">
-              <div class="wing-title">LEFT WING <span>M1–M3 → M7–M8 → M11</span></div>
+              <div class="wing-title">LEFT WING <span>M1–M4 → M8–M9 → M12</span></div>
               <div class="bracket-col" id="colQualLeft"></div>
               <div class="bracket-col" id="colQfLeft"></div>
               <div class="bracket-col" id="colSfLeft"></div>
             </section>
             <section class="bracket-final" id="colFinal">
-              <div class="final-label">CENTRAL · GRAND FINAL</div>
+              <div class="final-label">CENTRAL · GRAND FINAL (M14)</div>
               <div class="trophy-box" id="trophyBox">
                 <svg viewBox="0 0 120 72" aria-hidden="true">
                   <path d="M8 56 L18 24 L40 42 L60 12 L80 42 L102 24 L112 56 Z"></path>
@@ -149,7 +156,7 @@
               </div>
             </section>
             <section class="bracket-wing wing-right">
-              <div class="wing-title">RIGHT WING <span>M4–M6 → M9–M10 → M12</span></div>
+              <div class="wing-title">RIGHT WING <span>M5–M7 → M10–M11 → M13</span></div>
               <div class="bracket-col" id="colSfRight"></div>
               <div class="bracket-col" id="colQfRight"></div>
               <div class="bracket-col" id="colQualRight"></div>
@@ -170,6 +177,7 @@
           <div class="victory-kicker" id="victoryKicker">MATCH RESULT</div>
           <h2 id="victoryName">Awaiting Result</h2>
           <div class="victory-speaker" id="victorySpeaker">Designated speaker</div>
+          <div class="victory-members" id="victoryMembers"></div>
           <div class="scoreline">
             <div class="scoreline-side" id="resSideA">
               <span id="resNameA">Team A</span>
@@ -197,6 +205,7 @@
   <script src="/static/vendor/anime.min.js"></script>
   <script src="/static/vendor/confetti.browser.min.js"></script>
   <script src="/static/client.js"></script>
+  <script src="/static/buzzer_sfx.js"></script>
   <script src="/static/display.js"></script>
 </body>
 </html>

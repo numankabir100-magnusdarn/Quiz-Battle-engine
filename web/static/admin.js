@@ -56,6 +56,7 @@
   var tieBreakerWinnerSelect = el("tieBreakerWinnerSelect");
   var btnResolveTie = el("btnResolveTie");
   var btnRepopulateQf = el("btnRepopulateQf");
+  var btnSeedOfficial14 = el("btnSeedOfficial14");
 
   // Score Correction
   var scoreAdjustmentForm = el("scoreAdjustmentForm");
@@ -196,7 +197,8 @@
     if (stageDisplay) stageDisplay.textContent = String(round.stage || ev.stage || "QUALIFIER").toUpperCase();
     if (matchDisplay) {
       var mNum = match.match_number || ev.match_number || 1;
-      matchDisplay.textContent = "M" + String(mNum).padStart(2, "0") + " / 13";
+      var totalMatches = (bracket.matches && bracket.matches.length) || 14;
+      matchDisplay.textContent = "M" + String(mNum).padStart(2, "0") + " / " + totalMatches;
     }
     if (phaseDisplay) phaseDisplay.textContent = String(round.phase || "IDLE").replace(/_/g, " ").toUpperCase();
     if (activeTeamsDisplay) {
@@ -308,7 +310,10 @@
     var teams = Object.values(state.teams || {});
     rosterList.innerHTML = teams.map(function (t) {
       var color = t.accent_color || "#0ea5e9";
-      var mStr = esc((t.members || []).join(" & ")) || "No members";
+      var cleanMembers = (t.members || []).filter(function (m) { return m != null && String(m).trim() !== ""; });
+      var mStr = cleanMembers.length === 1
+        ? esc(cleanMembers[0]) + " (Solo)"
+        : (esc(cleanMembers.join(" & ")) || "No members");
       var wins = (t.win_loss && t.win_loss.wins) || 0;
       var losses = (t.win_loss && t.win_loss.losses) || 0;
 
@@ -479,10 +484,13 @@
       }
 
       var actionBtn = "";
-      if (m.team_a_id && m.team_b_id) {
-        if (!isCompleted && !isLive) {
-          actionBtn = '<button type="button" class="btn btn-sm btn-outline btn-full load-match-btn" data-load-match="' + mNum + '">Load into Live Stage</button>';
-        } else if (isLive) {
+      if (m.team_a_id && m.team_b_id && !isCompleted) {
+        if (!isLive) {
+          actionBtn = '<div style="display:flex;flex-direction:column;gap:4px;">' +
+            '<button type="button" class="btn btn-sm btn-outline btn-full load-match-btn" data-load-match="' + mNum + '">Load into Live Stage</button>' +
+            '<button type="button" class="btn btn-sm btn-warning btn-full advance-match-btn" data-advance-match="' + mNum + '">Advance Winner</button>' +
+            '</div>';
+        } else {
           actionBtn = '<button type="button" class="btn btn-sm btn-warning btn-full advance-match-btn" data-advance-match="' + mNum + '">Advance Winner</button>';
         }
       }
@@ -507,17 +515,26 @@
       '</div>';
     }
 
-    if (bracketQualifiers) {
-      bracketQualifiers.innerHTML = matches.filter(function (m) { return m.match_number >= 1 && m.match_number <= 6; }).map(renderMatchCard).join("");
+    if (bracketLeftQual) {
+      bracketLeftQual.innerHTML = matches.filter(function (m) { return m.match_number >= 1 && m.match_number <= 4; }).map(renderMatchCard).join("");
     }
-    if (bracketQuarterfinals) {
-      bracketQuarterfinals.innerHTML = matches.filter(function (m) { return m.match_number >= 7 && m.match_number <= 10; }).map(renderMatchCard).join("");
+    if (bracketLeftQf) {
+      bracketLeftQf.innerHTML = matches.filter(function (m) { return m.match_number >= 8 && m.match_number <= 9; }).map(renderMatchCard).join("");
     }
-    if (bracketSemifinals) {
-      bracketSemifinals.innerHTML = matches.filter(function (m) { return m.match_number >= 11 && m.match_number <= 12; }).map(renderMatchCard).join("");
+    if (bracketLeftSf) {
+      bracketLeftSf.innerHTML = matches.filter(function (m) { return m.match_number === 12; }).map(renderMatchCard).join("");
+    }
+    if (bracketRightQual) {
+      bracketRightQual.innerHTML = matches.filter(function (m) { return m.match_number >= 5 && m.match_number <= 7; }).map(renderMatchCard).join("");
+    }
+    if (bracketRightQf) {
+      bracketRightQf.innerHTML = matches.filter(function (m) { return m.match_number >= 10 && m.match_number <= 11; }).map(renderMatchCard).join("");
+    }
+    if (bracketRightSf) {
+      bracketRightSf.innerHTML = matches.filter(function (m) { return m.match_number === 13; }).map(renderMatchCard).join("");
     }
     if (bracketFinal) {
-      bracketFinal.innerHTML = matches.filter(function (m) { return m.match_number === 13; }).map(renderMatchCard).join("");
+      bracketFinal.innerHTML = matches.filter(function (m) { return m.match_number === 14; }).map(renderMatchCard).join("");
     }
 
     // Attach load match listener
@@ -541,8 +558,12 @@
     // Attach advance match listener
     document.querySelectorAll("[data-advance-match]").forEach(function (btn) {
       btn.addEventListener("click", function () {
-        if (!window.confirm("Advance the active match and record winner?")) return;
-        send("end_match", {}, "Admin advanced match");
+        var mNum = Number(btn.dataset.advanceMatch);
+        var winnerId = btn.dataset.winnerId || null;
+        if (!window.confirm("Advance the winner of M" + String(mNum).padStart(2, "0") + " to the next round?")) return;
+        var payload = { match_number: mNum };
+        if (winnerId) payload.winner_id = winnerId;
+        send("advance_winner", payload, "Admin advanced winner for M" + mNum);
       });
     });
   }
@@ -551,7 +572,7 @@
     if (!wildCardLeaderboard) return;
 
     var matches = bracket.matches || [];
-    var qualMatches = matches.filter(function (m) { return m.match_number >= 1 && m.match_number <= 6; });
+    var qualMatches = matches.filter(function (m) { return m.match_number >= 1 && m.match_number <= 7; });
     var losers = [];
 
     qualMatches.forEach(function (m) {
@@ -567,7 +588,7 @@
 
     losers.sort(function (a, b) { return b.score - a.score; });
 
-    var top2 = (bracket.wild_cards || []).slice(0, 2);
+    var top1 = (bracket.wild_cards || []).slice(0, 1);
     var tiedTeams = bracket.wild_card_tied_teams || [];
 
     // Check if tie exists
@@ -597,13 +618,13 @@
       '</thead>' +
       '<tbody>' +
         losers.map(function (item, idx) {
-          var isTop2 = top2.includes(item.teamId) || (top2.length < 2 && idx < 2 && !tiedTeams.length);
+          var isTop1 = top1.includes(item.teamId) || (top1.length === 0 && idx === 0 && !tiedTeams.length);
           var isTied = tiedTeams.includes(item.teamId);
-          var statusPill = isTop2 ? '<span class="wc-pill wc-advance">ADVANCING TO QF</span>' :
+          var statusPill = isTop1 ? '<span class="wc-pill wc-advance">ADVANCING TO QF</span>' :
                            isTied ? '<span class="wc-pill wc-tied">TIEBREAKER PENDING</span>' :
                            '<span class="wc-pill wc-elim">ELIMINATED</span>';
 
-          return '<tr class="' + (isTop2 ? "row-advancing" : isTied ? "row-tied" : "") + '">' +
+          return '<tr class="' + (isTop1 ? "row-advancing" : isTied ? "row-tied" : "") + '">' +
             '<td>#' + (idx + 1) + '</td>' +
             '<td><strong style="color: ' + getTeamColor(item.teamId) + ';">' + getTeamName(item.teamId) + '</strong></td>' +
             '<td>Match ' + item.matchNum + '</td>' +
@@ -656,7 +677,7 @@
         return ["warning_logged", "foul_penalty"].includes(act);
       }
       if (activeLogFilter === "bracket") {
-        return ["setup_match", "end_match", "resolve_wild_card_tie", "override_quarterfinal_pairings", "init_default_tournament"].includes(act);
+        return ["setup_match", "end_match", "advance_winner", "resolve_wild_card_tie", "override_quarterfinal_pairings", "init_default_tournament", "seed_official_14_teams"].includes(act);
       }
       if (activeLogFilter === "undo") {
         return act === "undo_last_action";
@@ -730,6 +751,14 @@
   teamSelect.addEventListener("change", function () {
     loadTeamToEditor(teamSelect.value);
   });
+
+  if (rosterList) {
+    rosterList.addEventListener("click", function (event) {
+      var ledgerBtn = event.target.closest("[data-ledger]");
+      if (ledgerBtn) openLedger(ledgerBtn.dataset.ledger);
+    });
+  }
+  if (ledgerClose) ledgerClose.addEventListener("click", closeLedger);
 
   member1Input.addEventListener("input", function () { updateSpeakerOptions(speakerSelect.value); });
   member2Input.addEventListener("input", function () { updateSpeakerOptions(speakerSelect.value); });
@@ -831,24 +860,31 @@
     send("resolve_wild_card_tie", { winning_team_id: winner }, "Admin resolved wild card tie");
   });
 
-  // Populate Quarterfinals Button
+  // Seed Official 14 Teams Button
+  if (btnSeedOfficial14) {
+    btnSeedOfficial14.addEventListener("click", function () {
+      if (!window.confirm("Seed all 14 official EEECi FA'26 teams (T01–T14) and reset the bracket to M1–M14?")) return;
+      send("seed_official_14_teams", {}, "Admin seeded official 14 teams");
+    });
+  }
+
+  // Populate Quarterfinals Button (7 Winners + Top-1 Wild-Card)
   btnRepopulateQf.addEventListener("click", function () {
     var bracket = (state.event && state.event.bracket) || {};
     var winners = bracket.qualifier_winners || [];
     var wildCards = bracket.wild_cards || [];
 
-    if (winners.length < 6 || wildCards.length < 2) {
-      if (!window.confirm("Not all 6 Qualifiers and 2 Wild Cards have completed. Attempt quarterfinal population anyway?")) {
+    if (winners.length < 7 || wildCards.length < 1) {
+      if (!window.confirm("Not all 7 Qualifiers and Top-1 Wild-Card have completed. Attempt quarterfinal population anyway?")) {
         return;
       }
     }
 
-    // Default seeding pairing
     var pairings = [
-      { match_number: 7, team_a_id: winners[0] || "team_1", team_b_id: winners[1] || "team_2" },
-      { match_number: 8, team_a_id: winners[2] || "team_3", team_b_id: winners[3] || "team_4" },
-      { match_number: 9, team_a_id: winners[4] || "team_5", team_b_id: wildCards[0] || "team_7" },
-      { match_number: 10, team_a_id: winners[5] || "team_6", team_b_id: wildCards[1] || "team_8" }
+      { match_number: 8,  team_a_id: winners[0] || "T01", team_b_id: wildCards[0] || "T02" },
+      { match_number: 9,  team_a_id: winners[1] || "T03", team_b_id: winners[2] || "T05" },
+      { match_number: 10, team_a_id: winners[3] || "T07", team_b_id: winners[4] || "T09" },
+      { match_number: 11, team_a_id: winners[5] || "T11", team_b_id: winners[6] || "T13" }
     ];
 
     send("override_quarterfinal_pairings", { pairings: pairings }, "Admin populated quarterfinal pairings");
